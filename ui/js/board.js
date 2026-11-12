@@ -136,7 +136,7 @@ export function createNotebook(opts = {}) {
         h('p', { style: { margin: '8px 0' } }, f.text),
         h('div', { class: 'mute' }, `${f.hypothesis} · ${f.experiment} · decided: ${f.decided}${f.downgraded ? ' · status capped by lab rules' : ''}`),
         (f.caveats || []).map((c) => h('div', { class: 'dim' }, '· ' + c))))) : h('div', { class: 'empty' }, 'Nothing has been promoted. Claims are tentative until you promote them.')),
-      (M.sources?.length || M.searches?.length) ? sec('sources', 'Sources', pill('experimental', 'dashed'),
+      (M.sources?.length || M.searches?.length) ? sec('sources', 'Sources',
         M.sources?.length ? h('div', { class: 'stack' }, M.sources.map((s) => h('div', { class: 'card pad' },
           h('div', { class: 'row' }, pill(s.n), h('b', {}, s.name), h('span', { class: 'mute' }, `${s.kind} · ${s.truncated ? `${s.shown} of ${s.chars} chars read` : `${s.chars} chars`}`)),
           h('div', { class: 'mute', style: { marginTop: '4px' } }, trunc(s.origin, 100))))) : null,

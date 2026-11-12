@@ -1,6 +1,7 @@
-# Minimal static file server for previewing ui/ in a browser (no Node/Python needed).
-param([int]$Port = 8123)
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..\ui')).Path
+# Minimal static file server for previewing a folder in a browser (no Node/Python needed).
+# Defaults to the app UI (ui/); pass -Dir ..\site to preview the website.
+param([int]$Port = 8123, [string]$Dir = '..\ui')
+$root = (Resolve-Path (Join-Path $PSScriptRoot $Dir)).Path
 $mime = @{ '.html'='text/html'; '.js'='text/javascript'; '.css'='text/css'; '.json'='application/json'; '.svg'='image/svg+xml'; '.png'='image/png' }
 $l = [System.Net.HttpListener]::new(); $l.Prefixes.Add("http://127.0.0.1:$Port/"); $l.Start()
 Write-Host "Serving $root on http://127.0.0.1:$Port/"

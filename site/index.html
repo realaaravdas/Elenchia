@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Elenchia: direct an AI lab</title>
+  <meta name="description" content="Elenchia is a local-first desktop app. You staff a lab of AI agents, point them at a research question, and approve what they do. Runs on local models through LM Studio or Ollama.">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="favicon.svg" alt="">Elenchia</a>
+    <nav aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#try">Try it</a>
+      <a href="#principles">Principles</a>
+      <a href="#install">Install</a>
+    </nav>
+    <div class="grow"></div>
+    <button class="iconbtn" id="theme" aria-label="Switch light or dark theme" title="Switch light or dark theme"></button>
+    <a class="btn sm" href="https://github.com/realaaravdas/Elenchia">GitHub</a>
+    <a class="btn primary sm" href="#install">Download</a>
+  </div>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="wrap">
+    <div class="cap"><span class="mono" id="ver">v1.4.0</span><span>Local-first desktop app</span></div>
+    <h1>Direct an AI lab, don’t chat with an assistant.</h1>
+    <p class="lede">Elenchia is a desktop app where you staff a lab of AI agents, point them at a research question, and approve what they do. They argue, design experiments, run them and grade the evidence. <b>You are the ethics and approval layer.</b></p>
+    <p class="lede" style="margin-top:-6px">Agents run on local models through LM Studio or Ollama. Your questions, data and the agents’ reasoning stay on your machine.</p>
+    <div class="cta">
+      <a class="btn primary" id="cta-dl" href="https://github.com/realaaravdas/Elenchia/releases">Download</a>
+      <a class="btn" href="#how">See how a run works</a>
+      <span class="note" id="cta-note">Windows, macOS and Linux</span>
+    </div>
+
+    <div class="demo" id="demo" aria-label="Animation of a recorded Elenchia run">
+      <div class="win">
+        <div class="win-bar">
+          <img src="favicon.svg" alt=""><span>Elenchia</span><span class="grow"></span>
+          <span class="wc"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></span>
+          <span class="wc"><svg viewBox="0 0 12 12"><path d="M2.5 2.5h7v7h-7z"/></svg></span>
+          <span class="wc"><svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg></span>
+        </div>
+        <div class="win-body">
+          <nav class="win-rail" id="d-rail" aria-hidden="true"></nav>
+          <div class="win-main">
+            <div class="win-top">
+              <div class="title" id="d-title">Elenchia</div>
+              <span class="pill dashed" id="d-phase" hidden></span>
+              <span class="pill dashed" id="d-turn" hidden></span>
+              <span class="grow"></span>
+              <div class="status" id="d-status"><span class="dot"></span><b>Idle</b></div>
+            </div>
+            <div class="win-cols">
+              <div class="win-stage">
+                <canvas id="d-canvas" aria-hidden="true"></canvas>
+                <div class="legend">seed = hypothesis · crack = open objection · vessel = experiment · signal = evidence</div>
+              </div>
+              <aside class="win-feed" aria-hidden="true">
+                <div class="tabs"><span class="on">Debate</span><span>Transcript</span><span>Decisions</span></div>
+                <div class="feed-body" id="d-feed"></div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="narr">
+        <div>
+          <div class="steps" id="d-steps">
+            <div>Frame</div><div>Hypothesize</div><div>Challenge</div><div>Design</div><div>Approve</div><div>Analyze</div><div>Promote</div>
+          </div>
+          <p class="fine">A recording of a real run of the scripted demo lab, replayed with the app’s own diagram renderer. The experiment in it was genuinely executed; the agents are a script, not models. With LM Studio they are real models.</p>
+        </div>
+        <div>
+          <div class="caption" aria-live="polite"><div class="cap" id="d-cap-h">Frame</div><p id="d-cap"></p></div>
+          <div class="ctl"><button class="btn sm" id="d-play" type="button">Pause</button><button class="btn sm" id="d-restart" type="button">Restart</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="how">
+  <div class="wrap">
+    <div class="side"><div class="cap">01</div><h2>A run, step by step</h2></div>
+    <div class="body">
+      <p class="lead">A run is seven steps. Steps two to six loop, up to three rounds, until the critic and the statistician have no open objections. <b>Three of the steps are gates:</b> nothing happens there without your decision.</p>
+      <div class="steps" style="margin-bottom:34px">
+        <div>Frame</div><div>Hypothesize</div><div>Challenge</div><div>Design</div><div>Approve</div><div>Analyze</div><div>Promote</div>
+      </div>
+      <table class="t">
+        <thead><tr><th>Gate</th><th>Fires when</th><th>You can</th></tr></thead>
+        <tbody>
+          <tr><td>Question framing</td><td>a run starts</td><td>edit the scope, set off-limits topics and a budget</td></tr>
+          <tr><td>Experiment approval</td><td>a spec is ready</td><td>approve, edit the code, approve with a condition, reject, ask the critic for another pass</td></tr>
+          <tr><td>Resource and data</td><td>an experiment needs files, personal data or heavy compute</td><td>grant once, grant for the run, deny</td></tr>
+          <tr><td>Claim promotion</td><td>the team wants to record a finding</td><td>accept, mark tentative, send back</td></tr>
+          <tr><td>Ethics flag</td><td>any agent raises a concern</td><td>halt, constrain, or override with a written reason</td></tr>
+        </tbody>
+      </table>
+      <p class="fine" style="margin-top:14px">Three more appear only when needed: a search request from an agent, a retry prompt when a model fails, and an offer to extend a budget that ran out.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="try">
+  <div class="wrap">
+    <div class="side"><div class="cap">02</div><h2>The five surfaces</h2></div>
+    <div class="body">
+      <p class="lead">This is the real interface, running a recorded demo in your page. Nothing is sent anywhere. Start a run with <kbd>N</kbd>, or switch views with the buttons.</p>
+      <div class="surf" role="group" aria-label="Choose a surface" id="surf"></div>
+      <div class="frame"><iframe id="app" src="app/index.html" title="Elenchia interface, browser preview" loading="lazy"></iframe></div>
+      <p class="surf-desc" id="surf-desc"></p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="principles">
+  <div class="wrap">
+    <div class="side"><div class="cap">03</div><h2>What the code enforces</h2></div>
+    <div class="body">
+      <p class="lead">These are rules in the orchestrator, not requests in a prompt. A model that ignores its brief still cannot do these things.</p>
+      <dl class="rules">
+        <div><dt>Approvals are specific</dt><dd>You approve a concrete spec: a code diff against the previous experiment, a runtime estimate, the statistician’s plan and a risk label. Never a vague “continue?”.</dd></div>
+        <div><dt>Any agent can flag. Only you can clear.</dt><dd>A flag stops the run until you decide. Overriding one needs a written reason, which is logged.</dd></div>
+        <div><dt>Roles stay adversarial</dt><dd>The critic can only add objections. The experimentalist’s output is never read as a grade. The statistician’s grade is clamped to inconclusive if nothing was executed.</dd></div>
+        <div><dt>Numbers come from executed code</dt><dd>Agents exchange schema-checked JSON. Results are parsed from the sandbox’s output line, never from what an agent says about them.</dd></div>
+        <div><dt>Tentative is the default</dt><dd>A finding only reaches “established” if you accept it, it links to an executed result, the evidence is moderate or strong, and the critic conceded. Promotion can never establish a claim on its own.</dd></div>
+        <div><dt>Everything is replayable</dt><dd>The event log is hash-chained SQLite with triggers that reject updates and deletes. Every screen is a reduction over it, so you can scrub to any moment. Prompts, model names, temperatures and seeds are stored.</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="stack">
+  <div class="wrap">
+    <div class="side"><div class="cap">04</div><h2>Models and tools</h2></div>
+    <div class="body">
+      <p class="lead">Local first. Anything that leaves your machine is opt-in, shows you exactly what will be sent, and asks every time.</p>
+      <div class="stack">
+        <div><h3>LM Studio</h3><p>The default. Load an instruct model (7B or larger works best), start the server on the Developer tab, and Elenchia lists your models and warns when one won’t fit your GPU.</p><span class="pill">default</span></div>
+        <div><h3>Ollama</h3><p>Detected automatically on port 11434.</p><span class="pill">local</span></div>
+        <div><h3>OpenAI-compatible API</h3><p>OpenAI, OpenRouter, Groq or any server that speaks the same API. Agents on it send their prompts, including your question, to that provider, and a warning says so.</p><span class="pill dashed">cloud · optional</span></div>
+        <div><h3>Paper and web search</h3><p>OpenAlex and Semantic Scholar for papers, falling back to the web. Agents ask to search; you edit and approve each query.</p><span class="pill dashed">opt-in</span></div>
+        <div><h3>Built-in browser</h3><p>Opens one public page in a throwaway Edge or Chrome profile: no logins, downloads blocked, local addresses refused. You watch it in the app.</p><span class="pill dashed">opt-in</span></div>
+        <div><h3>Parallel work</h3><p>Several hypotheses are tested at once when your GPU has room for the models. A CPU-only machine, or a full GPU, stays one at a time.</p><span class="pill">auto</span></div>
+        <div><h3>Export and import</h3><p>PDF, Word, Markdown, HTML, plain text, CSV, or a <span class="mono">.elenchia</span> file you can open again to view the notebook.</p><span class="pill">built in</span></div>
+        <div><h3>Python sandbox</h3><p>Experiments run as Python in an isolated process with no network. Without Python installed, the demo lab falls back to a built-in kernel and says so.</p><span class="pill">optional</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="install">
+  <div class="wrap">
+    <div class="side"><div class="cap">05</div><h2>Install</h2></div>
+    <div class="body">
+      <p class="lead" id="rel-line">Installers for each platform are attached to the latest release.</p>
+      <div class="tabs2" role="tablist" id="os-tabs">
+        <button role="tab" aria-selected="true" data-os="windows">Windows</button>
+        <button role="tab" aria-selected="false" data-os="mac">macOS</button>
+        <button role="tab" aria-selected="false" data-os="linux">Linux</button>
+        <button role="tab" aria-selected="false" data-os="source">From source</button>
+        <span class="ind" id="os-ind"></span>
+      </div>
+
+      <div class="panel" data-panel="windows">
+        <div class="dl" data-dl="windows"></div>
+        <ol>
+          <li>Run the installer. Windows shows <b>“Windows protected your PC”</b> because the build is unsigned: choose <b>More info</b>, then <b>Run anyway</b>.</li>
+          <li>Windows 11 already includes the WebView2 runtime the app uses.</li>
+        </ol>
+      </div>
+      <div class="panel" data-panel="mac" hidden>
+        <div class="dl" data-dl="mac"></div>
+        <ol>
+          <li>Pick <b>Apple Silicon</b> (M1 and later) or <b>Intel</b>, open the disk image and drag Elenchia to Applications.</li>
+          <li>The build is unsigned, so macOS blocks the first launch. Right-click the app and choose <b>Open</b>, or clear the quarantine flag:</li>
+        </ol>
+        <pre><span class="p">$ </span>xattr -dr com.apple.quarantine /Applications/Elenchia.app<button class="btn sm copy" type="button" data-copy="xattr -dr com.apple.quarantine /Applications/Elenchia.app">Copy</button></pre>
+      </div>
+      <div class="panel" data-panel="linux" hidden>
+        <div class="dl" data-dl="linux"></div>
+        <ol>
+          <li>AppImage: make it executable and run it.</li>
+          <li>Debian or Ubuntu: install the <b>.deb</b>. Either needs WebKitGTK 4.1 (<span class="mono">libwebkit2gtk-4.1</span>), which current distributions ship.</li>
+        </ol>
+        <pre><span class="p">$ </span>chmod +x Elenchia_*_amd64.AppImage &amp;&amp; ./Elenchia_*_amd64.AppImage
+<span class="p">$ </span>sudo dpkg -i Elenchia_*_amd64.deb<button class="btn sm copy" type="button" data-copy="chmod +x Elenchia_*_amd64.AppImage && ./Elenchia_*_amd64.AppImage">Copy</button></pre>
+      </div>
+      <div class="panel" data-panel="source" hidden>
+        <ol>
+          <li>Install Rust (stable). On Windows that means the MSVC toolchain; on Linux, the WebKitGTK and GTK development packages.</li>
+          <li>There is no Node toolchain: the interface is plain HTML, CSS and JavaScript.</li>
+        </ol>
+        <pre><span class="p">$ </span>git clone https://github.com/realaaravdas/Elenchia.git
+<span class="p">$ </span>cd Elenchia
+<span class="p">$ </span>cargo run --manifest-path src-tauri/Cargo.toml<button class="btn sm copy" type="button" data-copy="git clone https://github.com/realaaravdas/Elenchia.git&#10;cd Elenchia&#10;cargo run --manifest-path src-tauri/Cargo.toml">Copy</button></pre>
+      </div>
+
+      <div class="cap" style="margin:34px 0 12px">First run</div>
+      <ol class="firstrun" style="margin:0;padding-left:20px;color:var(--fg-dim);max-width:68ch">
+        <li style="margin:6px 0"><b style="color:var(--fg)">Start a model server.</b> In LM Studio, download an instruct model, open the Developer tab and switch Start Server on. Without one, Elenchia runs the scripted demo lab so you can see the whole flow.</li>
+        <li style="margin:6px 0"><b style="color:var(--fg)">Open the app.</b> The top bar shows how many models it found. Assign one to each agent in the Lab designer, or press the auto-assign button.</li>
+        <li style="margin:6px 0"><b style="color:var(--fg)">Ask a question.</b> Press <kbd>N</kbd>, type a research question, and approve the first gate. The status badge says when it is running and when it is waiting on you.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="limits">
+  <div class="wrap">
+    <div class="side"><div class="cap">06</div><h2>Limits, stated plainly</h2></div>
+    <div class="body">
+      <ul class="plain">
+        <li><b>The sandbox is process isolation, not an OS container.</b> Generated code runs in a separate Python process with a scrubbed environment, no network and a time limit, but you should still read code before you approve it.</li>
+        <li><b>The newer features have had less real-world testing.</b> The browser, online search, cloud models and parallel mode have mostly been exercised against the scripted lab, mock servers and one local 12B model. Report anything that misbehaves.</li>
+        <li><b>Search engines block automated browsers.</b> Google and DuckDuckGo show bot challenges, and Elenchia does not try to get around them. For full web search, point it at your own SearXNG.</li>
+        <li><b>Custom roles are stored and drawn,</b> but only the six built-in roles are scheduled.</li>
+        <li><b>Refusal rules are narrow.</b> A short built-in list stops clearly harmful framings before any model is called; everything subtler relies on agent flags and your ethics gate.</li>
+        <li><b>Installers are unsigned,</b> so each operating system warns on first launch.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Elenchia <span id="ver2">1.4.0</span></span>
+    <span class="grow"></span>
+    <a href="https://github.com/realaaravdas/Elenchia">Source</a>
+    <a href="https://github.com/realaaravdas/Elenchia/releases">Releases</a>
+    <a href="https://github.com/realaaravdas/Elenchia#readme">Documentation</a>
+  </div>
+</footer>
+
+<script type="module" src="js/site.js"></script>
+<script type="module" src="js/demo.js"></script>
+</body>
+</html>

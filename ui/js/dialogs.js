@@ -115,7 +115,7 @@ export function newRunDialog() {
   const mins = h('input', { type: 'number', value: 45, min: 1, max: 720 });
   const off = h('input', { type: 'text', placeholder: 'Comma-separated topics the lab must not touch' });
   const ds = h('input', { type: 'text', placeholder: 'Optional path to a dataset (granted read-only, only if an experiment asks and you approve)' });
-  // Attached reference material (experimental): PDFs/text from disk, or a link.
+  // Attached reference material: PDFs/text from disk, or a link.
   const attached = [];
   const list = h('div', { class: 'stack' });
   const url = h('input', { type: 'text', placeholder: 'Paste a link to a paper, PDF or web page…' });
@@ -150,7 +150,7 @@ export function newRunDialog() {
     h('div', { class: 'field' }, h('label', {}, 'Off-limits topics'), off),
     h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'Turn budget'), turns), h('div', { class: 'field' }, h('label', {}, 'Time budget (minutes)'), mins)),
     h('div', { class: 'field' }, h('label', {}, 'Dataset (optional)'), ds),
-    h('div', { class: 'field' }, h('label', {}, 'Reference material ', pill('experimental', 'dashed')),
+    h('div', { class: 'field' }, h('label', {}, 'Reference material'),
       h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: browse }, 'Choose files…'), url, h('button', { class: 'btn sm', onclick: addUrl }, 'Add link')),
       h('div', { class: 'hint' }, 'PDF, text, Markdown, CSV, LaTeX or HTML. The lab reads the passages most relevant to your question. Links are fetched only because you add them.'), msg, list),
     h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Cancel'),
@@ -216,14 +216,14 @@ export function appSettingsDialog({ replayTour }) {
       h('div', { class: 'card pad' }, h('h3', {}, 'Appearance'),
         h('div', { class: 'row', style: { marginTop: '8px' } }, h('span', { style: { flex: 1 } }, 'Theme'), h('button', { class: 'btn sm', onclick: () => A.toggleTheme() }, 'Switch light / dark')),
         h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, calm, h('span', {}, 'Calm mode: freeze the living diagram’s motion'))),
-      h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Online research tools'), pill('experimental', 'dashed')),
+      h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Online research tools')),
         h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, lit, h('span', {}, 'Let the lab search papers (OpenAlex / Semantic Scholar) and, if configured below, the web. Agents can ask to search during a run; you approve each request and only the query text is sent.')),
         h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'OpenAlex API key (optional, free; raises the daily limit)'), key),
         h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'SearXNG URL (optional: full web search through your own instance)'), searx),
         h('div', { class: 'row', style: { marginTop: '8px' } }, h('b', { style: { flex: 1 } }, 'Built-in browser'), pill(st.browser_path ? 'ready' : 'Edge or Chrome not found', st.browser_path ? 'solid' : 'dashed')),
         h('label', { class: 'row', style: { gap: '8px', marginTop: '6px' } }, bvis, h('span', {}, 'Show the browser window while agents use it (otherwise it runs hidden; you still see it in the Browser tab)')),
         h('div', { class: 'hint' }, 'Agents can open any public page in the built-in browser (a throwaway Edge/Chrome profile with no logins) and search Wikipedia through it. Search engines like Google and DuckDuckGo block automated browsers, so full web search needs your own SearXNG. Keys are stored unencrypted in the local database.')),
-      h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Parallel work'), pill('experimental', 'dashed')),
+      h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Parallel work')),
         h('div', { class: 'dim', style: { margin: '6px 0 8px' } }, 'While one hypothesis2019s experiment runs, other hypotheses can be designed, reviewed and analysed at the same time. Auto only does this when your GPU has room for the models (or when no local model is involved); a CPU-only machine stays one at a time. Each run logs which it chose and why.'),
         h('div', { class: 'field' }, par)),
       h('div', { class: 'card pad' }, h('h3', {}, 'Keyboard shortcuts'), kvs(keys))),

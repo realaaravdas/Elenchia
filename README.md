@@ -8,7 +8,7 @@ Elenchia is a local-first desktop app. You staff a lab with specialised agents (
 
 Every agent runs on a **local model** served by Ollama and/or LM Studio. Questions, data and intermediate reasoning never leave your machine.
 
-This is **v0.1**, the MVP from the product concept: four core agents with editable briefs, statistical/ML experiments run as Python in a local sandbox, the five surfaces (floor, designer, experiment board, approval inbox, notebook), approval and promotion gates, and an append-only audit log.
+This is **version 1.4**: four core agents with editable briefs, statistical and ML experiments run as Python in a local sandbox, the five surfaces (floor, designer, experiment board, approval inbox, notebook), approval and promotion gates, an append-only audit log, and, added since 1.2, research tools (paper search, a built-in browser, attached references), parallel experiments, automatic recovery from model failures, and notebook export and import.
 
 ## Download
 
@@ -90,11 +90,9 @@ The orchestrator emits events over Tauri's event bus; the UI derives everything 
 - **Turns run one at a time** (one model loaded at a time, as designed), so the living diagram shows one conversation at a time rather than several in parallel.
 - **Custom roles** are stored and drawn but only the six built-in roles are scheduled. The librarian, per-gate replay of alternative branches, mixed-model disagreement metrics and reproducibility reruns are v0.2/v0.3 per the concept.
 - **Refusal rules are narrow.** A short built-in list halts clearly harmful framings before any model is called; everything subtler relies on agent flags and your ethics gate.
-- Tested against the scripted lab end to end, and against a mock Ollama server for streaming, schema validation, retry and error handling. Not yet tested against a real LM Studio or Ollama server (the LM Studio paths follow its documented API), and not against Python (none was installed on the dev machine; the sandbox code path for Python is untested).
+- Run end to end against LM Studio with a local 12B model, the scripted lab, and mock servers for streaming, schema validation, retry and error handling. Not yet tested against a real Ollama server, and not against Python (none was installed on the dev machine; the sandbox code path for Python is untested).
 
-## v1.2 (experimental): research assistance features
-
-These are on the `v1.2-experimental` branch and are being finalised for v2. Behaviour may change.
+## Research assistance (added in 1.2)
 
 - **Reference material.** In *New run*, attach PDFs, text, Markdown, CSV, LaTeX or HTML files with the native file picker, or paste a link to a paper or page. Text is extracted locally; the lab reads the passages most relevant to your question (small local models cannot take whole papers) and cites them as `[S1]`, `[S2]`. A link is fetched only because you added it. Scanned PDFs need OCR, which is not supported yet.
 - **Online literature search** (off by default; enable under *Runtimes & hardware*). Uses OpenAlex, with Semantic Scholar as fallback, because Google Scholar has no API and blocks automated access. After you confirm the question, a gate shows the exact query text, which you can edit, and sends nothing until you approve. Results appear in the notebook's *Sources* section and agents may cite them as `[n]`. This is the only code that touches the internet.
@@ -102,13 +100,13 @@ These are on the `v1.2-experimental` branch and are being finalised for v2. Beha
 - **Time awareness.** Every agent turn is told the wall-clock time and turns remaining and is asked to be briefer as they run out. The debate depth shrinks automatically so the experiment still gets its time.
 - **Thinking-model fix.** Empty replies from reasoning models in LM Studio are retried with a larger token budget, and the error now says how to fix it (turn thinking off or raise max tokens).
 
-Untested against live services: the literature APIs, PDF extraction and the file dialog were compiled but not exercised end to end.
+Live OpenAlex and Semantic Scholar queries, PDF extraction and the native file dialogs have had limited real-world testing.
 
-### OpenAI-compatible cloud models (experimental)
+### OpenAI-compatible cloud models
 
 LM Studio stays the default and Elenchia assigns local models first. If you want a cloud model for some roles, add an **OpenAI-compatible API** under *Runtimes & hardware* (base URL and API key; works with OpenAI, OpenRouter, Groq, Together or any server that speaks the OpenAI chat API). Its models then appear in each agent's picker, labelled *cloud*. Agents on it send their prompts (your question, attached material, experiment results) to that provider, and a warning is shown when you start a run with one. The key is stored unencrypted in the local database.
 
-### v1.2 (experimental): research tools and self-healing
+### Research tools and self-healing
 
 - **Open-access full text.** After a paper search, the free PDFs of the top results are fetched and the passages relevant to your question are read (not just abstracts). A checkbox on the search gate turns this off.
 - **Search as an agent tool.** With *Online research tools* enabled, an agent can reply with a search request (`papers`, `web` or `open` for one page) instead of answering. You approve each one at a gate that shows the exact query (editable), or allow searches for the rest of the run. At most 4 per run. Results are numbered `[n]` / `[Wn]`, passed to every later prompt and shown in the notebook.
@@ -116,9 +114,7 @@ LM Studio stays the default and Elenchia assigns local models first. If you want
 - **Automatic recovery.** Bad model output is diagnosed from the text itself, with no extra AI call. The app first repairs it deterministically (strips fences and `<think>` blocks, removes trailing commas, closes cut-off JSON, fixes key spelling and types, maps synonyms such as `result` to `summary`, and never invents missing content). Every repair is logged on the message. If that fails it retries up to 4 times, adapting each attempt: more tokens when the reply was cut off, lower temperature, and an exact JSON skeleton in the retry prompt. Server hiccups, rate limits and unreachable servers are retried with 2s/6s/15s backoff.
 - **Manual retry.** If automatic fixes run out, the run pauses at a *Needs a retry* gate showing the diagnosis, the last output and the error. Retry as-is, or change the model, max tokens or temperature for that role, then continue from the same step. Nothing is rerun from the start.
 
-## v1.3 (experimental)
-
-Everything below, plus the v1.2 features above, lives on the `v1.3-experimental` branch and is being finalised for v2.
+## Added in 1.3 and 1.4
 
 - **Parallel work.** While one hypothesis's experiment runs, other hypotheses are designed, reviewed and analysed at the same time (up to 3 pipelines; the best result is promoted and the others are logged). *Auto* (the default) only does this when the machine can take it: with local models it needs a GPU with room for the model(s), and a CPU-only machine or an over-full GPU stays one at a time. The run log says which it chose and why. Settings can force it off or on.
 - **Export.** Notebook → *Export…* saves PDF, Word (.docx), Markdown, HTML, plain text, a transcript CSV, the raw event log, or an **Elenchia notebook** (`.elenchia`).

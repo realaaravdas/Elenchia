@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Elenchia logo: three stacked bars forming an E, with a single dot">
+  <title>Elenchia</title>
+  <!-- Black tile -->
+  <rect width="512" height="512" rx="116" fill="#000000"/>
+  <!-- E: a spine and three rounded bars (the agents) -->
+  <g fill="#FFFFFF">
+    <rect x="132" y="140" width="48" height="232" rx="24"/>
+    <rect x="132" y="140" width="244" height="48" rx="24"/>
+    <rect x="132" y="232" width="164" height="48" rx="24"/>
+    <rect x="132" y="324" width="244" height="48" rx="24"/>
+  </g>
+  <!-- The dot: the human approver -->
+  <circle cx="376" cy="256" r="24" fill="#FFFFFF"/>
+</svg>

@@ -95,7 +95,7 @@ export function gateControls(g, opts = {}) {
     const web = d.kind === 'web', open = d.kind === 'open';
     put(wrap,
       g.kind === 'search' ? h('div', {}, h('b', {}, d.agent_name), ` asks to ${open ? 'open a web page' : 'search the ' + (web ? 'web' : 'literature')}. ${d.searches_left} search${d.searches_left === 1 ? '' : 'es'} left in this run.`) : null,
-      h('div', { class: 'card pad blocked' }, h('div', { class: 'cap' }, open ? 'Experimental · opens a page on the internet' : 'Experimental · leaves this machine'),
+      h('div', { class: 'card pad blocked' }, h('div', { class: 'cap' }, open ? 'Opens a page on the internet' : 'Leaves this machine'),
         h('div', { style: { marginTop: '4px' } }, open ? 'The built-in browser (fresh profile, no logins, downloads blocked) opens only the address below. Local and LAN addresses are refused.' : ['Only the text below is sent, to: ', (d.services || []).join(' · '), '. Nothing else about your lab, data or models is shared.'])),
       g.kind === 'literature' ? h('div', { class: 'field' }, h('label', {}, 'Search in'), src) : null,
       h('div', { class: 'field' }, h('label', {}, open ? 'Page address (edit before opening)' : 'Search query (edit before sending)'), q),

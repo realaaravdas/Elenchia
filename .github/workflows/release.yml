@@ -1,6 +1,6 @@
 name: Release
 
-# Pushing a tag like v1.3.0-experimental builds installers for Windows, macOS
+# Pushing a tag like v1.4.0 builds installers for Windows, macOS
 # (Apple Silicon and Intel) and Linux, and attaches them to a GitHub release.
 on:
   push:
@@ -58,13 +58,13 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Elenchia ${{ github.ref_name }}'
           releaseBody: |
-            Experimental build. Installers are unsigned, so your OS will warn on first launch:
+            Installers are unsigned, so your OS will warn on first launch:
 
             - **Windows**: SmartScreen shows "Windows protected your PC". Choose *More info*, then *Run anyway*.
             - **macOS**: Gatekeeper blocks it. Right-click the app and choose *Open*, or run `xattr -dr com.apple.quarantine /Applications/Elenchia.app`.
             - **Linux**: `chmod +x Elenchia*.AppImage` and run it, or install the `.deb`.
 
-            Elenchia needs a local model server (LM Studio or Ollama) for real agents; without one it runs the scripted demo lab. See the README for setup and the list of experimental features.
+            Elenchia needs a local model server (LM Studio or Ollama) for real agents; without one it runs the scripted demo lab. See the README for setup and the list of features.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
