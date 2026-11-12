@@ -1,0 +1,70 @@
+name: Release
+
+# Pushing a tag like v1.3.0-experimental builds installers for Windows, macOS
+# (Apple Silicon and Intel) and Linux, and attaches them to a GitHub release.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            args: '--bundles nsis'
+          - name: macOS Apple Silicon
+            os: macos-latest
+            args: '--target aarch64-apple-darwin --bundles dmg'
+          - name: macOS Intel
+            os: macos-latest
+            args: '--target x86_64-apple-darwin --bundles dmg'
+          - name: Linux x64
+            os: ubuntu-22.04
+            args: '--bundles deb,appimage'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev xdg-utils
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ startsWith(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install the Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NO_STRIP: 'true'
+        with:
+          tauriScript: cargo tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Elenchia ${{ github.ref_name }}'
+          releaseBody: |
+            Experimental build. Installers are unsigned, so your OS will warn on first launch:
+
+            - **Windows**: SmartScreen shows "Windows protected your PC". Choose *More info*, then *Run anyway*.
+            - **macOS**: Gatekeeper blocks it. Right-click the app and choose *Open*, or run `xattr -dr com.apple.quarantine /Applications/Elenchia.app`.
+            - **Linux**: `chmod +x Elenchia*.AppImage` and run it, or install the `.deb`.
+
+            Elenchia needs a local model server (LM Studio or Ollama) for real agents; without one it runs the scripted demo lab. See the README for setup and the list of experimental features.
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ matrix.args }}

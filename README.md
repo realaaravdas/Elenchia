@@ -10,6 +10,18 @@ Every agent runs on a **local model** served by Ollama and/or LM Studio. Questio
 
 This is **v0.1**, the MVP from the product concept: four core agents with editable briefs, statistical/ML experiments run as Python in a local sandbox, the five surfaces (floor, designer, experiment board, approval inbox, notebook), approval and promotion gates, and an append-only audit log.
 
+## Download
+
+Installers for Windows, macOS (Apple Silicon and Intel) and Linux are attached to each [release](https://github.com/realaaravdas/Elenchia/releases). They are built by GitHub Actions when a `v*` tag is pushed, and are **unsigned**, so the OS warns on first launch:
+
+| Platform | File | First launch |
+|---|---|---|
+| Windows | `Elenchia_<version>_x64-setup.exe` | SmartScreen: *More info* → *Run anyway* |
+| macOS | `Elenchia_<version>_aarch64.dmg` (Apple Silicon) or `_x64.dmg` (Intel) | Right-click the app → *Open*, or `xattr -dr com.apple.quarantine /Applications/Elenchia.app` |
+| Linux | `.AppImage` or `.deb` | `chmod +x` the AppImage and run it, or `sudo dpkg -i` the `.deb` |
+
+On Linux the app needs WebKitGTK 4.1 (`libwebkit2gtk-4.1`), which most current distributions ship.
+
 ## Run it
 
 Prerequisites: Rust (stable, MSVC on Windows) and the WebView2 runtime (ships with Windows 11). No Node toolchain: the UI is plain HTML/CSS/JS.
