@@ -91,13 +91,13 @@ export function gateControls(g, opts = {}) {
   if (g.kind === 'literature' || g.kind === 'search') {
     const q = h('textarea', { rows: 3 }, d.query);
     const full = h('input', { type: 'checkbox', checked: d.fulltext !== false });
-    const web = d.kind === 'web';
+    const web = d.kind === 'web', open = d.kind === 'open';
     put(wrap,
-      g.kind === 'search' ? h('div', {}, h('b', {}, d.agent_name), ` asks to search the ${web ? 'web' : 'literature'}. ${d.searches_left} search${d.searches_left === 1 ? '' : 'es'} left in this run.`) : null,
-      h('div', { class: 'card pad blocked' }, h('div', { class: 'cap' }, 'Experimental · leaves this machine'),
-        h('div', { style: { marginTop: '4px' } }, 'Only the text below is sent, to: ', (d.services || []).join(' · '), '. Nothing else about your lab, data or models is shared.')),
-      h('div', { class: 'field' }, h('label', {}, 'Search query (edit before sending)'), q),
-      h('label', { class: 'row', style: { gap: '8px' } }, full, h('span', {}, web ? 'Also read the top 2 result pages' : 'Also read the free full text of the top results (open-access PDFs)')),
+      g.kind === 'search' ? h('div', {}, h('b', {}, d.agent_name), ` asks to ${open ? 'open a web page' : 'search the ' + (web ? 'web' : 'literature')}. ${d.searches_left} search${d.searches_left === 1 ? '' : 'es'} left in this run.`) : null,
+      h('div', { class: 'card pad blocked' }, h('div', { class: 'cap' }, open ? 'Experimental · opens a page on the internet' : 'Experimental · leaves this machine'),
+        h('div', { style: { marginTop: '4px' } }, open ? 'The built-in browser (fresh profile, no logins, downloads blocked) opens only the address below. Local and LAN addresses are refused.' : ['Only the text below is sent, to: ', (d.services || []).join(' · '), '. Nothing else about your lab, data or models is shared.'])),
+      h('div', { class: 'field' }, h('label', {}, open ? 'Page address (edit before opening)' : 'Search query (edit before sending)'), q),
+      open ? null : h('label', { class: 'row', style: { gap: '8px' } }, full, h('span', {}, web ? 'Also read the top 2 result pages (in the built-in browser)' : 'Also read the free full text of the top results (open-access PDFs)')),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary', ...key('a'), onclick: () => decide(g, 'approve', null, { query: q.value, fulltext: full.checked }) }, 'Search ', h('kbd', {}, 'A')),
         g.kind === 'search' ? h('button', { class: 'btn', ...key('g'), onclick: () => decide(g, 'grant_run', null, { query: q.value, fulltext: full.checked }) }, 'Allow searches for this run ', h('kbd', {}, 'G')) : null,

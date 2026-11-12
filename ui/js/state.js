@@ -16,6 +16,7 @@ export const S = {
   playing: false,
   live: new Map(), // msgId -> raw streamed text
   thought: new Map(), // msgId -> streamed reasoning text (what the model is thinking)
+  browserView: null, // latest frame from the built-in browser {action,url,title,shot}
   feedTab: 'debate',
   calm: false,
   theme: 'dark',

@@ -69,6 +69,12 @@ function refresh(ev, o) { renderRail(); renderTop(); view?.update(ev, o); }
 function handleEvent(p) {
   if (!p.persisted) {
     if (p.run_id !== S.runId && !S.awaiting) return;
+    if (p.kind === 'browser_view') {
+      S.browserView = p.data.closed ? { ...(S.browserView || {}), closed: true } : p.data;
+      if (!p.data.closed && !S.browserShown) { S.browserShown = true; S.feedTab = 'browser'; }
+      if (S.view === 'floor') view?.browser?.();
+      return;
+    }
     if (p.kind === 'message_retry') {
       S.live.delete(p.data.id); S.thought.delete(p.data.id);
       if (S.view === 'floor') view?.retry?.(p.data.id, p.data.from, p.data.reason);
@@ -84,7 +90,7 @@ function handleEvent(p) {
   }
   const ev = p.event;
   if (ev.run_id !== S.runId) {
-    if (S.awaiting && ev.kind === 'run_started') { S.runId = ev.run_id; S.events = []; S.live.clear(); S.thought.clear(); }
+    if (S.awaiting && ev.kind === 'run_started') { S.runId = ev.run_id; S.events = []; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; }
     else { if (ev.kind === 'run_ended') loadRuns(); return; }
   }
   S.events.push(ev);
@@ -106,7 +112,7 @@ Object.assign(A, {
     mountView(opts); renderTop();
   },
   async startRun(params) {
-    S.awaiting = true; S.events = []; S.replay = null; S.live.clear(); S.thought.clear(); S.focus = null; stopPlay();
+    S.awaiting = true; S.events = []; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.focus = null; stopPlay();
     try {
       const id = await call('start_run', { lab: S.lab, params });
       S.runId = id; await loadRuns();
@@ -115,7 +121,7 @@ Object.assign(A, {
   },
   async loadRun(id) {
     stopPlay();
-    S.events = await call('run_events', { runId: id }); S.runId = id; S.replay = null; S.live.clear(); S.thought.clear();
+    S.events = await call('run_events', { runId: id }); S.runId = id; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false;
     recompute(); A.go('floor');
   },
   async resolve(gateId, decision) { await call('resolve_gate', { gateId, decision }); },

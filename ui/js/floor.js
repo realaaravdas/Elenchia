@@ -102,7 +102,9 @@ export function createFloor() {
 
   function renderFeed(M) {
     clear(tabs);
-    for (const [id, label] of [['debate', 'Debate'], ['transcript', 'Transcript'], ['log', 'Decisions']])
+    const tabList = [['debate', 'Debate'], ['transcript', 'Transcript'], ['log', 'Decisions']];
+    if (S.browserView || M.browsed?.length) tabList.splice(2, 0, ['browser', 'Browser']);
+    for (const [id, label] of tabList)
       tabs.append(h('button', { role: 'tab', 'aria-selected': S.feedTab === id, onclick: () => { S.feedTab = id; renderFeed(M); } }, label));
     const prev = body.scrollTop, atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
     clear(body);
@@ -122,6 +124,16 @@ export function createFloor() {
       if (!M.msgs.length) body.append(h('div', { class: 'empty' }, 'No messages yet.'));
       for (const m of M.msgs) body.append(msgCard(m));
       for (const [id, raw] of S.live) if (isLive() && !M.msgs.find((m) => m.id === id)) { /* streaming messages show in bubbles */ }
+    } else if (S.feedTab === 'browser') {
+      const v = S.browserView;
+      body.append(h('div', { class: 'cap' }, 'Built-in browser · fresh profile, no logins · page text is untrusted'));
+      if (v && !v.closed) {
+        body.append(h('div', { class: 'card pad', style: { margin: '8px 0' } },
+          h('div', { class: 'row' }, pill(v.action === 'search' ? 'searching' : 'reading', 'solid'), h('span', { class: 'mono', style: { flex: 1, minWidth: 0, overflowWrap: 'anywhere' } }, v.url)),
+          v.title ? h('div', { style: { fontWeight: 600, marginTop: '6px' } }, v.title) : null,
+          v.shot ? h('img', { src: 'data:image/jpeg;base64,' + v.shot, alt: 'What the browser is showing', style: { width: '100%', borderRadius: '6px', marginTop: '8px', border: '1px solid var(--line)' } }) : null));
+      } else body.append(h('div', { class: 'empty' }, v?.closed ? 'The browser closed when the run ended.' : 'No page opened yet. An agent can ask to search or open a page; you approve each request.'));
+      if (M.browsed?.length) body.append(h('div', { class: 'cap', style: { marginTop: '10px' } }, 'Pages opened this run'), ...[...M.browsed].reverse().map((b) => h('div', { class: 'msg', style: { cursor: 'default' } }, h('div', { class: 'hd' }, h('b', {}, b.action), '·', `${b.chars} chars`), h('div', { style: { overflowWrap: 'anywhere' } }, b.title || b.url), h('div', { class: 'mute', style: { overflowWrap: 'anywhere' } }, b.url))));
     } else {
       const rows = [...M.decisions].reverse();
       if (!rows.length && !M.notes.length) body.append(h('div', { class: 'empty' }, 'Every approval, flag and override is logged here.'));
@@ -151,6 +163,7 @@ export function createFloor() {
     update,
     delta: (msgId, from, raw, thought) => floor.delta(msgId, from, raw, thought),
     retry: (msgId, from, text) => floor.retry(msgId, from, text),
+    browser: () => update(),
     destroy: () => floor.destroy(),
     floor,
   };

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod browser;
 mod demo;
 mod orchestrator;
 mod roles;
@@ -92,7 +93,8 @@ fn get_settings(st: S<'_>) -> Value {
            "literature_enabled": st.store.setting("literature_enabled").as_deref() == Some("1"),
            "openalex_key_set": st.store.setting("openalex_key").map(|k| !k.is_empty()).unwrap_or(false),
            "openai_url": u.openai, "openai_key_set": !u.openai_key.is_empty(),
-           "brave_key_set": st.store.setting("brave_key").map(|k| !k.trim().is_empty()).unwrap_or(false),
+           "browser_path": browser::find_browser().map(|p| p.display().to_string()),
+           "browser_visible": st.store.setting("browser_visible").as_deref() == Some("1"),
            "searxng_url": st.store.setting("searxng_url").unwrap_or_default()})
 }
 
@@ -105,8 +107,8 @@ fn set_settings(
     openalex_key: Option<String>,
     openai_url: Option<String>,
     openai_key: Option<String>,
-    brave_key: Option<String>,
     searxng_url: Option<String>,
+    browser_visible: Option<bool>,
 ) -> Result<(), String> {
     st.store.set_setting("ollama_url", ollama_url.trim()).map_err(|e| e.to_string())?;
     st.store.set_setting("lmstudio_url", lmstudio_url.trim()).map_err(|e| e.to_string())?;
@@ -122,11 +124,8 @@ fn set_settings(
             st.store.set_setting("openai_key", k.trim()).map_err(|e| e.to_string())?;
         }
     }
-    if let Some(k) = brave_key {
-        // Empty means "leave as is"; a single space clears the saved key.
-        if !k.is_empty() {
-            st.store.set_setting("brave_key", k.trim()).map_err(|e| e.to_string())?;
-        }
+    if let Some(v) = browser_visible {
+        st.store.set_setting("browser_visible", if v { "1" } else { "0" }).map_err(|e| e.to_string())?;
     }
     if let Some(u) = searxng_url {
         st.store.set_setting("searxng_url", u.trim()).map_err(|e| e.to_string())?;
@@ -206,6 +205,7 @@ fn main() {
                 pending: Mutex::new(HashMap::new()),
                 halts: Mutex::new(HashMap::new()),
                 sources: Mutex::new(HashMap::new()),
+                browser: tokio::sync::Mutex::new(None),
             });
             app.manage(state.clone());
             if let Ok(out) = std::env::var("ELENCHIA_SELFTEST") {

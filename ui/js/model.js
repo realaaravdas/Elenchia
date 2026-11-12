@@ -11,7 +11,7 @@ export function derive(events, upTo = events.length) {
     runId: events[0]?.run_id ?? null, started: null, lab: null, phase: null, round: 0, framed: null,
     msgs: [], hyps: new Map(), objs: new Map(), exps: new Map(), gates: new Map(), flags: [], findings: [],
     evidence: [], notes: [], decisions: [], pending: new Map(), ended: null, turns: 0, lastSeq: 0, firstTs: events[0]?.ts, lastTs: events[0]?.ts,
-    agents: {}, sources: [], literature: null, searches: [],
+    agents: {}, sources: [], literature: null, searches: [], browsed: [],
   };
   for (let i = 0; i < Math.min(upTo, events.length); i++) {
     const { kind, data: d, seq, ts } = events[i];
@@ -22,6 +22,7 @@ export function derive(events, upTo = events.length) {
       case 'framed': M.framed = d; break;
       case 'sources': M.sources = d.sources; break;
       case 'literature': M.literature = d; M.searches.push(d); break;
+      case 'browse': M.browsed.push({ ...d, ts }); break;
       case 'turn_start': M.pending.set(d.id, d); M.turns = d.turn; break;
       case 'turn_failed': M.pending.delete(d.id); M.notes.push({ ts, text: `A turn failed: ${d.reason}` }); break;
       case 'message': M.pending.delete(d.id); M.msgs.push({ ...d, ts, seq }); break;
