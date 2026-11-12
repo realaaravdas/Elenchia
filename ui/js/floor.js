@@ -1,0 +1,130 @@
+// The floor: lanes (what each agent is doing), the living diagram, and the
+// debate feed with objections threaded onto the hypotheses they target.
+
+import { h, $, clear, pill, statusPill, gradeMeter, trunc, STAGE_LABEL } from './util.js';
+import { A, S, isLive, running } from './state.js';
+import { Floor } from './diagram.js';
+import { agentName } from './model.js';
+import { agentDrawer, hypDrawer, expDrawer, messageDialog, exchangeDialog, msgCard, objThread, newRunDialog } from './dialogs.js';
+
+export function replayBar() {
+  const n = S.events.length, at = S.replay ?? n;
+  const range = h('input', { type: 'range', min: 0, max: n, value: at, 'aria-label': 'Timeline', oninput: () => A.setReplay(+range.value) });
+  return h('div', { class: 'overlay' },
+    h('button', { class: 'btn sm', title: 'Step back', onclick: () => A.stepReplay(-1), disabled: n === 0 }, '◀'),
+    h('button', { class: 'btn sm', title: S.playing ? 'Pause' : 'Play', onclick: () => A.togglePlay(), disabled: n === 0 }, S.playing ? 'Pause' : S.replay == null ? 'Replay' : 'Play'),
+    h('button', { class: 'btn sm', title: 'Step forward', onclick: () => A.stepReplay(1), disabled: n === 0 }, '▶'),
+    range,
+    h('span', { class: 'mono mute', style: { minWidth: '76px', textAlign: 'right' } }, `${at} / ${n}`),
+    h('button', { class: 'btn sm', onclick: () => A.setReplay(null), disabled: S.replay == null }, 'Live'),
+    h('button', { class: 'btn sm', 'aria-pressed': S.calm, onclick: () => A.toggleCalm(), title: 'Static layout, for when local models need every resource' }, S.calm ? 'Calm: on' : 'Calm'));
+}
+
+export function createFloor() {
+  const canvas = h('canvas', { 'aria-label': 'Living diagram of the lab' });
+  const lanes = h('section', { class: 'lanes' });
+  const legend = h('div', { class: 'legend' }, 'seed = hypothesis · crack = open objection · vessel = experiment · gate = needs you · signal = evidence');
+  const banner = h('div', { class: 'banner' });
+  const welcome = h('div', { style: { position: 'absolute', inset: 0, display: 'none', placeItems: 'center', pointerEvents: 'none' } });
+  const stage = h('section', { class: 'stage' }, canvas, legend, banner, welcome);
+  const tabs = h('div', { class: 'tabs', role: 'tablist' });
+  const body = h('div', { class: 'body' });
+  const feed = h('section', { class: 'feed' }, tabs, body);
+  const root = h('div', { class: 'floor' }, lanes, stage, feed);
+
+  const floor = new Floor(canvas, {
+    onAgent: (id) => agentDrawer(id),
+    onMessage: (id) => messageDialog(id),
+    onSeed: (id) => { S.focus = { type: 'hyp', id }; S.feedTab = "debate"; update(); const el = body.querySelector(`[data-hyp="${id}"]`); el?.scrollIntoView({ block: 'center', behavior: 'smooth' }); hypDrawer(id); },
+    onVessel: (id) => id && expDrawer(id),
+    onLink: (a, b) => exchangeDialog(a, b),
+    onMoved: (id, x, y) => A.moveAgent(id, x, y),
+  });
+
+  function renderLanes(M) {
+    clear(lanes);
+    for (const a of M.lab.agents.filter((x) => x.enabled)) {
+      const st = M.agents[a.id] ?? { status: 'idle', activity: '' };
+      lanes.append(h('div', { class: 'lane', 'data-s': st.status, onclick: () => agentDrawer(a.id) },
+        h('div', { class: 'glyph' }, a.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()),
+        h('div', { class: 'nm' }, a.name),
+        h('div', { class: 'act' }, st.status === 'idle' ? (M.ended ? 'run ended' : 'idle') : st.activity + (st.to && st.to !== 'human' && st.status !== 'blocked' ? ` → ${agentName(M, st.to)}` : '')),
+        h('div', { class: 'mdl' }, a.model.runtime === 'demo' ? 'scripted demo' : `${a.model.runtime} · ${a.model.model}`)));
+    }
+  }
+
+  function renderBanner(M) {
+    clear(banner);
+    if (M.openGates.length && isLive()) banner.append(h('div', { class: 'card pad blocked' }, h('b', {}, `${M.openGates.length} decision${M.openGates.length > 1 ? 's' : ''} waiting on you`), h('div', { class: 'dim', style: { margin: '2px 0 8px' } }, M.openGates[0].title), h('button', { class: 'btn primary sm', onclick: () => A.go('inbox') }, 'Open inbox')));
+    else if (M.ended) banner.append(h('div', { class: 'card pad' }, h('b', {}, 'Run ' + M.ended.status), h('div', { class: 'dim' }, M.ended.reason), M.findings.length ? h('div', { style: { marginTop: '8px' } }, h('button', { class: 'btn sm', onclick: () => A.go('notebook') }, 'Open notebook')) : null));
+    else if (M.started && M.started.preview) banner.append(h('div', { class: 'card pad dim' }, 'Browser preview: replaying a recorded run of the scripted demo lab.'));
+  }
+
+  function renderWelcome(M) {
+    clear(welcome);
+    canvas.style.opacity = S.runId ? "1" : "0.28";
+    if (S.runId) { welcome.style.display = "none"; return; }
+    welcome.style.display = "grid";
+    const steps = ['Frame', 'Hypothesize', 'Challenge', 'Design', 'Approve', 'Analyze', 'Promote'];
+    welcome.append(h('div', { class: 'card pad', style: { maxWidth: '520px', pointerEvents: 'auto', background: 'var(--bg)' } },
+      h('div', { class: 'cap' }, 'The lab is empty'),
+      h('h2', { style: { margin: '6px 0 8px', fontSize: '19px' } }, 'You’re not chatting. You’re directing a lab.'),
+      h('p', { class: 'dim', style: { margin: '0 0 12px' } }, 'Pose a research question. The team proposes, attacks, tests and grades. Each ● below is a gate where nothing happens without you.'),
+      h('div', { class: 'steps', style: { gridTemplateColumns: 'repeat(7,1fr)', margin: '0 0 14px' } }, steps.map((s, i) => h('div', { class: [0, 4, 6].includes(i) ? 'gate' : '' }, s))),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn primary', onclick: newRunDialog }, 'Start a research run'), h('button', { class: 'btn', onclick: () => A.go('designer') }, 'Staff the lab'))));
+  }
+
+  function renderFeed(M) {
+    clear(tabs);
+    for (const [id, label] of [['debate', 'Debate'], ['transcript', 'Transcript'], ['log', 'Decisions']])
+      tabs.append(h('button', { role: 'tab', 'aria-selected': S.feedTab === id, onclick: () => { S.feedTab = id; renderFeed(M); } }, label));
+    const prev = body.scrollTop, atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+    clear(body);
+    if (S.feedTab === 'debate') {
+      if (!M.hyps.size) body.append(h('div', { class: 'empty' }, S.runId ? 'Waiting for the first hypotheses…' : 'The debate will appear here: hypotheses with their objections threaded beneath.'));
+      for (const hy of M.hyps.values()) {
+        body.append(h('div', { class: 'hcard', 'data-hyp': hy.id, style: S.focus?.id === hy.id ? { borderColor: 'var(--fg)' } : null },
+          h('div', { class: 'row' }, h('span', { class: 'mono', style: { fontWeight: 700 } }, hy.id), statusPill(hy.status), h('span', { class: 'mute', style: { flex: 1 } }, 'round ' + hy.round), hy.evidence ? gradeMeter(hy.evidence.grade) : null),
+          h('div', { class: 'claim', onclick: () => hypDrawer(hy.id), style: { cursor: 'pointer' } }, hy.claim),
+          h('div', { class: 'pred' }, 'Predicts: ' + hy.prediction),
+          hy.objs.length ? h('div', { class: 'thread' }, hy.objs.map((oid) => objThread(M.objs.get(oid)))) : null,
+          hy.exps.length ? h('div', { class: 'row', style: { marginTop: '10px', flexWrap: 'wrap' } }, hy.exps.map((e) => h('button', { class: 'btn sm', onclick: () => expDrawer(e) }, `${e} · ${M.exps.get(e).state}`))) : null,
+          hy.evidence ? h('div', { class: 'dim', style: { marginTop: '8px', fontSize: '12px' } }, trunc(hy.evidence.summary, 220)) : null));
+      }
+      for (const f of M.findings) body.append(h('div', { class: 'hcard', style: { borderColor: 'var(--fg)' } }, h('div', { class: 'cap' }, 'Finding'), h('div', { class: 'claim' }, f.title), h('div', {}, f.text), h('div', { class: 'row', style: { marginTop: '8px' } }, statusPill(f.status), gradeMeter(f.grade))));
+    } else if (S.feedTab === 'transcript') {
+      if (!M.msgs.length) body.append(h('div', { class: 'empty' }, 'No messages yet.'));
+      for (const m of M.msgs) body.append(msgCard(m));
+      for (const [id, raw] of S.live) if (isLive() && !M.msgs.find((m) => m.id === id)) { /* streaming messages show in bubbles */ }
+    } else {
+      const rows = [...M.decisions].reverse();
+      if (!rows.length && !M.notes.length) body.append(h('div', { class: 'empty' }, 'Every approval, flag and override is logged here.'));
+      for (const n of M.notes) body.append(h('div', { class: 'msg' }, h('div', { class: 'hd' }, 'note'), n.text));
+      for (const d of rows) body.append(h('div', { class: 'msg', style: { cursor: 'default' } }, h('div', { class: 'hd' }, h('b', {}, d.kind), '·', d.by === 'auto' ? 'auto' : 'you'), h('b', {}, d.decision), d.title ? h('div', { class: 'mute' }, d.title) : null, d.note ? h('div', { class: 'dim' }, '“' + trunc(d.note, 120) + '”') : null));
+    }
+    if (atBottom && S.feedTab !== 'log') body.scrollTop = body.scrollHeight; else body.scrollTop = prev;
+  }
+
+  function refreshBar() {
+    const old = stage.querySelector(".overlay");
+    if (old && document.activeElement?.type === "range" && old.contains(document.activeElement)) {
+      old.querySelector(".mono").textContent = `${S.replay ?? S.events.length} / ${S.events.length}`; return;
+    }
+    const nb = replayBar();
+    if (old) old.replaceWith(nb); else stage.append(nb);
+  }
+  function update(ev, opts) {
+    const M = S.M; if (!M?.lab) return;
+    renderLanes(M); renderBanner(M); renderWelcome(M); renderFeed(M); refreshBar();
+    floor.setModel(M, { live: isLive() || !!opts?.animate, calm: S.calm, reset: !!opts?.reset });
+    if (ev) floor.push(ev);
+  }
+
+  return {
+    el: root,
+    update,
+    delta: (msgId, from, raw) => floor.delta(msgId, from, raw),
+    destroy: () => floor.destroy(),
+    floor,
+  };
+}

@@ -1,0 +1,9 @@
+[package]
+name = "icongen"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+resvg = "0.50.0"
