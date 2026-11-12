@@ -20,11 +20,7 @@ use tauri::{Manager, State};
 type S<'a> = State<'a, Arc<AppState>>;
 
 fn urls(st: &AppState) -> runtime::Urls {
-    let d = runtime::Urls::default();
-    runtime::Urls {
-        ollama: st.store.setting("ollama_url").unwrap_or(d.ollama),
-        lmstudio: st.store.setting("lmstudio_url").unwrap_or(d.lmstudio),
-    }
+    runtime::Urls::load(|k| st.store.setting(k))
 }
 
 #[tauri::command]
@@ -94,7 +90,8 @@ fn get_settings(st: S<'_>) -> Value {
     let u = urls(&st);
     json!({"version": env!("CARGO_PKG_VERSION"), "ollama_url": u.ollama, "lmstudio_url": u.lmstudio, "data_dir": st.data_dir.display().to_string(),
            "literature_enabled": st.store.setting("literature_enabled").as_deref() == Some("1"),
-           "openalex_key_set": st.store.setting("openalex_key").map(|k| !k.is_empty()).unwrap_or(false)})
+           "openalex_key_set": st.store.setting("openalex_key").map(|k| !k.is_empty()).unwrap_or(false),
+           "openai_url": u.openai, "openai_key_set": !u.openai_key.is_empty()})
 }
 
 #[tauri::command]
@@ -104,11 +101,22 @@ fn set_settings(
     lmstudio_url: String,
     literature_enabled: Option<bool>,
     openalex_key: Option<String>,
+    openai_url: Option<String>,
+    openai_key: Option<String>,
 ) -> Result<(), String> {
     st.store.set_setting("ollama_url", ollama_url.trim()).map_err(|e| e.to_string())?;
     st.store.set_setting("lmstudio_url", lmstudio_url.trim()).map_err(|e| e.to_string())?;
     if let Some(on) = literature_enabled {
         st.store.set_setting("literature_enabled", if on { "1" } else { "0" }).map_err(|e| e.to_string())?;
+    }
+    if let Some(u) = openai_url {
+        st.store.set_setting("openai_url", u.trim()).map_err(|e| e.to_string())?;
+    }
+    if let Some(k) = openai_key {
+        // Empty means "leave as is"; a single space clears the saved key.
+        if !k.is_empty() {
+            st.store.set_setting("openai_key", k.trim()).map_err(|e| e.to_string())?;
+        }
     }
     if let Some(k) = openalex_key {
         // An empty field means "leave as is"; clearing is done by entering a single space.

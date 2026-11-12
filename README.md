@@ -91,3 +91,7 @@ These are on the `v1.2-experimental` branch and are being finalised for v2. Beha
 - **Thinking-model fix.** Empty replies from reasoning models in LM Studio are retried with a larger token budget, and the error now says how to fix it (turn thinking off or raise max tokens).
 
 Untested against live services: the literature APIs, PDF extraction and the file dialog were compiled but not exercised end to end.
+
+### OpenAI-compatible cloud models (experimental)
+
+LM Studio stays the default and Elenchia assigns local models first. If you want a cloud model for some roles, add an **OpenAI-compatible API** under *Runtimes & hardware* (base URL and API key; works with OpenAI, OpenRouter, Groq, Together or any server that speaks the OpenAI chat API). Its models then appear in each agent's picker, labelled *cloud*. Agents on it send their prompts (your question, attached material, experiment results) to that provider, and a warning is shown when you start a run with one. The key is stored unencrypted in the local database.

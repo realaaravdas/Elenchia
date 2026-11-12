@@ -74,6 +74,7 @@ export async function createPreview(fire) {
     detect: () => ({
       ollama: { up: false, url: 'http://127.0.0.1:11434', models: [] },
       lmstudio: { up: false, url: 'http://127.0.0.1:1234', models: [] },
+      openai: { up: false, configured: false, url: 'https://api.openai.com/v1', models: [] },
       hardware: { ram_total_gb: 32, ram_free_gb: 18.4, vram: null },
       python: { found: false },
       preview: true,
@@ -99,7 +100,7 @@ export async function createPreview(fire) {
     list_runs: () => [...runs.values()].map((r) => r.meta).reverse(),
     run_events: ({ runId }) => runs.get(runId)?.events ?? [],
     verify_audit: ({ runId }) => ({ events: runs.get(runId)?.events.length ?? 0, broken_at: null }),
-    get_settings: () => ({ ollama_url: 'http://127.0.0.1:11434', lmstudio_url: 'http://127.0.0.1:1234', data_dir: '(browser preview)' }),
+    get_settings: () => ({ ollama_url: 'http://127.0.0.1:11434', lmstudio_url: 'http://127.0.0.1:1234', openai_url: 'https://api.openai.com/v1', openai_key_set: false, data_dir: '(browser preview)' }),
     set_settings: () => {},
     pick_sources: () => ({ added: [], errors: ['File picking needs the desktop app.'] }),
     add_source_url: () => { throw new Error('Attaching links needs the desktop app.'); },

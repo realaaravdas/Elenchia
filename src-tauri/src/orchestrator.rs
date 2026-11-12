@@ -245,11 +245,7 @@ impl Run {
     }
 
     fn urls(&self) -> Urls {
-        let d = Urls::default();
-        Urls {
-            ollama: self.st.store.setting("ollama_url").unwrap_or(d.ollama),
-            lmstudio: self.st.store.setting("lmstudio_url").unwrap_or(d.lmstudio),
-        }
+        Urls::load(|k| self.st.store.setting(k))
     }
 
     fn check_budget(&self) -> R<()> {

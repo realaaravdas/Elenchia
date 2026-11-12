@@ -47,7 +47,7 @@ function renderTop() {
   const n = modelsAvailable().length;
   t.append(...[
     S.preview ? pill('browser preview', 'dashed') : null,
-    h('button', { class: 'pill', style: { cursor: 'pointer', background: 'none' }, title: 'Runtimes & hardware', onclick: settingsDialog }, n ? `${n} local model${n > 1 ? 's' : ''}` : 'no local models · demo lab'),
+    h('button', { class: 'pill', style: { cursor: 'pointer', background: 'none' }, title: 'Runtimes & hardware', onclick: settingsDialog }, n ? `${n} model${n > 1 ? 's' : ''}` : 'no local models · demo lab'),
     running() ? h('button', { class: 'btn sm', onclick: () => A.halt() }, 'Halt run') : null,
     h('button', { class: 'btn primary sm', onclick: newRunDialog }, 'New run ', h("kbd", {}, "N")),
     windowControls()].filter(Boolean));
@@ -157,7 +157,9 @@ Object.assign(A, {
   addLink(from, to, kind) { if (!S.lab.links.some((l) => l.from === from && l.to === to && l.kind === kind)) S.lab.links.push({ from, to, kind }); A.touchLab(); designerRefresh(); },
   removeLink(l) { S.lab.links = S.lab.links.filter((x) => x !== l); A.touchLab(); designerRefresh(); },
   autoAssign() {
-    const ms = modelsAvailable(); if (!ms.length) return;
+    const all = modelsAvailable(); if (!all.length) return;
+    const local = all.filter((m) => m.runtime !== 'openai');
+    const ms = local.length ? local : all; // local models first; cloud only if nothing local is available
     const fam = (m) => (m.family || m.id.split(/[:\-/ ]/)[0] || '').toLowerCase();
     const bySize = [...ms].sort((a, b) => (b.size ?? 0) - (a.size ?? 0));
     const gen = bySize[0], critic = ms.find((m) => fam(m) !== fam(gen)) ?? bySize[1 % ms.length];

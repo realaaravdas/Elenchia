@@ -139,9 +139,11 @@ export function newRunDialog() {
   };
   const demo = S.lab.agents.every((a) => !a.enabled || a.model.runtime === 'demo');
   const haveModels = modelsAvailable().length > 0;
+  const cloud = S.lab.agents.some((a) => a.enabled && a.model.runtime === 'openai');
   const examples = ['Does this regularizer actually help, or is it tuning noise?', 'Which of these three mechanisms best explains the pattern in my dataset?', 'Is this pricing experiment powered well enough to run?'];
   openModal(h('div', {},
     h('h2', {}, 'Start a research run'), h('div', { class: 'sub' }, 'You hold the gates: nothing consequential happens without your decision.'),
+    cloud ? h('div', { class: 'card pad blocked', style: { marginBottom: '16px' } }, h('b', {}, 'Cloud model in use.'), h('div', { class: 'dim' }, 'Agents set to the OpenAI-compatible API send their prompts to that provider, including your question, attached material and experiment results. Use LM Studio for everything to keep it on this machine.')) : null,
     demo ? h('div', { class: 'card pad', style: { marginBottom: '16px' } }, h('b', {}, 'This lab is using the scripted demo.'), h('div', { class: 'dim' }, haveModels ? 'Local models are available. Assign them in the Lab designer to run on real models.' : 'No Ollama or LM Studio server was detected, so agents follow a script. The experiment itself is still really executed.'), haveModels ? h('div', { style: { marginTop: '8px' } }, h('button', { class: 'btn sm', onclick: () => { closeModal(); A.go('designer'); } }, 'Open Lab designer')) : null) : null,
     h('div', { class: 'field' }, h('label', {}, 'Research question'), q, h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } }, examples.map((x) => h('button', { class: 'btn sm ghost', onclick: () => { q.value = x; q.focus(); } }, trunc(x, 46))))),
     h('div', { class: 'field' }, h('label', {}, 'Constraints'), cons),
@@ -173,22 +175,26 @@ export function runsDialog() {
 export function settingsDialog() {
   const d = S.detection, st = S.settings;
   const ou = h('input', { type: 'text', value: st.ollama_url }), lu = h('input', { type: 'text', value: st.lmstudio_url });
+const cu = h('input', { type: 'text', value: st.openai_url, placeholder: 'https://api.openai.com/v1' });  const ck = h('input', { type: 'password', placeholder: st.openai_key_set ? 'A key is saved. Type to replace.' : 'sk-…', autocomplete: 'off' });
   const rt = (name, key) => {
     const x = d?.[key];
-    return h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, name), pill(x?.up ? 'running' : 'not detected', x?.up ? 'solid' : 'dashed')),
-      x?.up ? h('div', { class: 'mute', style: { marginTop: '6px' } }, x.models.length ? x.models.map((m) => m.id).join(' · ') : 'Server is up but no models are installed.') : h('div', { class: 'mute', style: { marginTop: '6px' } }, key === 'ollama' ? 'Install from ollama.com, then `ollama pull <model>`.' : 'Start the local server from the Developer tab in LM Studio.'));
+    return h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, name), pill(x?.up ? (key === 'openai' ? 'connected' : 'running') : (key === 'openai' && !x?.configured ? 'not configured' : 'not detected'), x?.up ? 'solid' : 'dashed')),
+      x?.up ? h('div', { class: 'mute', style: { marginTop: '6px' } }, x.models.length ? x.models.map((m) => m.id).join(' · ') : 'Server is up but no models are installed.') : h('div', { class: 'mute', style: { marginTop: '6px' } }, key === 'ollama' ? 'Install from ollama.com, then `ollama pull <model>`.' : key === 'openai' ? (x?.configured ? 'Could not list models. Check the key and base URL.' : 'Not configured. Add an API key below to use a cloud model.') : 'Start the local server from the Developer tab in LM Studio.'));
   };
   const hw = d?.hardware;
   openModal(h('div', {},
-    h('h2', {}, 'Runtimes & hardware'), h('div', { class: 'sub' }, 'Every agent runs on a local model. Nothing leaves this machine unless you turn on online search in Settings.'),
-    h('div', { class: 'stack' }, rt('Ollama', 'ollama'), rt('LM Studio', 'lmstudio'),
+    h('h2', {}, 'Runtimes & hardware'), h('div', { class: 'sub' }, 'Agents run on local models by default (LM Studio first). Nothing leaves this machine unless you add a cloud API below or turn on online search in Settings.'),
+    h('div', { class: 'stack' }, rt('LM Studio (default)', 'lmstudio'), rt('Ollama', 'ollama'), rt('OpenAI-compatible API (cloud)', 'openai'),
       h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Python (experiment sandbox)'), pill(d?.python?.found ? d.python.version : 'not found', d?.python?.found ? 'solid' : 'dashed')), d?.python?.found ? null : h('div', { class: 'mute', style: { marginTop: '6px' } }, 'Install Python 3.9+ to run experiments. The scripted demo falls back to a built-in kernel, clearly labelled.')),
       h('div', { class: 'card pad' }, h('h3', {}, 'Hardware'), kvs([['RAM', hw ? `${hw.ram_free_gb} GB free of ${hw.ram_total_gb} GB` : '—'], ['GPU', hw?.vram ? `${hw.vram.gpu} · ${hw.vram.free_gb.toFixed(1)} GB free of ${hw.vram.total_gb.toFixed(1)} GB` : 'no NVIDIA GPU reported'], ['Scheduling', 'One large model loaded at a time by default']]))),
     h('hr', { class: 'hr' }),
-    h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'Ollama URL'), ou), h('div', { class: 'field' }, h('label', {}, 'LM Studio URL'), lu)),
+    h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'LM Studio URL'), lu), h('div', { class: 'field' }, h('label', {}, 'Ollama URL'), ou)),
+    h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'OpenAI-compatible API'), pill('cloud', 'solid')),
+      h('div', { class: 'dim', style: { margin: '6px 0 8px' } }, 'Works with OpenAI, OpenRouter, Groq, Together, Azure-style gateways or any server that speaks the OpenAI chat API. Agents you assign to it send their prompts (your question, attached material, experiment results) to that provider. The key is stored unencrypted in this app’s local database.'),
+      h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'Base URL'), cu), h('div', { class: 'field' }, h('label', {}, 'API key'), ck))),
     h('div', { class: 'mute' }, `Data folder: ${st.data_dir}`),
     S.preview ? h('div', { class: 'card pad', style: { marginTop: '12px' } }, 'Browser preview: replaying a run recorded from the desktop backend. Install the desktop app for local models, the real sandbox and persistent storage.') : null,
-    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'), h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(ou.value, lu.value); closeModal(); toast('Rescanned runtimes.'); } }, 'Save & rescan'))));
+    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'), h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(ou.value, lu.value, { openaiUrl: cu.value, openaiKey: ck.value }); closeModal(); toast('Rescanned runtimes.'); } }, 'Save & rescan'))));
 }
 
 // ---------- App settings ----------

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ModelRef {
-    pub runtime: String, // "ollama" | "lmstudio" | "demo"
+    pub runtime: String, // "lmstudio" (default) | "ollama" | "openai" (cloud) | "demo"
     pub model: String,
     #[serde(default = "d_temp")]
     pub temperature: f32,
@@ -35,14 +35,38 @@ impl ChatMsg {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Urls {
     pub ollama: String,
     pub lmstudio: String,
+    /// Any OpenAI-compatible endpoint (OpenAI, OpenRouter, Groq, a company gateway…). Cloud.
+    pub openai: String,
+    pub openai_key: String,
+}
+impl std::fmt::Debug for Urls {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Urls {{ ollama: {}, lmstudio: {}, openai: {}, openai_key: <hidden> }}", self.ollama, self.lmstudio, self.openai)
+    }
 }
 impl Default for Urls {
     fn default() -> Self {
-        Self { ollama: "http://127.0.0.1:11434".into(), lmstudio: "http://127.0.0.1:1234".into() }
+        Self {
+            ollama: "http://127.0.0.1:11434".into(),
+            lmstudio: "http://127.0.0.1:1234".into(),
+            openai: "https://api.openai.com/v1".into(),
+            openai_key: String::new(),
+        }
+    }
+}
+impl Urls {
+    pub fn load(get: impl Fn(&str) -> Option<String>) -> Self {
+        let d = Self::default();
+        Self {
+            ollama: get("ollama_url").unwrap_or(d.ollama),
+            lmstudio: get("lmstudio_url").unwrap_or(d.lmstudio),
+            openai: get("openai_url").filter(|s| !s.trim().is_empty()).unwrap_or(d.openai),
+            openai_key: get("openai_key").unwrap_or_default(),
+        }
     }
 }
 
@@ -101,11 +125,38 @@ pub async fn detect(http: &reqwest::Client, urls: &Urls) -> Value {
             .collect();
         Some(models)
     };
-    let (o, l) = tokio::join!(ollama, lmstudio);
+    // OpenAI-compatible cloud endpoint: only probed once the user has configured it
+    // (a key, or a non-default base URL such as a local gateway).
+    let configured = !urls.openai_key.trim().is_empty() || urls.openai != Urls::default().openai;
+    let openai = async {
+        if !configured {
+            return None;
+        }
+        let mut req = http.get(format!("{}/models", trim(&urls.openai))).timeout(Duration::from_secs(6));
+        if !urls.openai_key.trim().is_empty() {
+            req = req.bearer_auth(urls.openai_key.trim());
+        }
+        let r = req.send().await.ok()?;
+        if !r.status().is_success() {
+            return None;
+        }
+        let v: Value = r.json().await.ok()?;
+        let skip = ["embed", "whisper", "tts", "dall-e", "moderation", "image", "audio", "realtime", "transcribe", "rerank"];
+        let mut ids: Vec<String> = v["data"]
+            .as_array()?
+            .iter()
+            .filter_map(|m| m["id"].as_str().map(String::from))
+            .filter(|id| !skip.iter().any(|s| id.to_lowercase().contains(s)))
+            .collect();
+        ids.sort();
+        Some(ids.into_iter().map(|id| json!({"id": id, "size": Value::Null, "family": Value::Null})).collect::<Vec<Value>>())
+    };
+    let (o, l, c) = tokio::join!(ollama, lmstudio, openai);
 
     json!({
         "ollama": {"up": o.is_some(), "url": urls.ollama, "models": o.unwrap_or_default()},
         "lmstudio": {"up": l.is_some(), "url": urls.lmstudio, "models": l.unwrap_or_default()},
+        "openai": {"up": c.is_some(), "configured": configured, "url": urls.openai, "models": c.unwrap_or_default()},
         "hardware": hardware().await,
         "python": crate::sandbox::find_python().await,
     })
@@ -147,6 +198,12 @@ async fn chat_once(
     max_tokens: u32,
     on_delta: &mut impl FnMut(&str) -> bool,
 ) -> Result<(String, String)> {
+    // OpenAI's newer reasoning models (o-series, gpt-5) take max_completion_tokens
+    // and only the default temperature; send that shape up front for them.
+    let strict_openai = m.runtime == "openai" && {
+        let n = m.model.to_lowercase();
+        n.starts_with("o1") || n.starts_with("o3") || n.starts_with("o4") || n.starts_with("gpt-5")
+    };
     let (url, body, ndjson) = match m.runtime.as_str() {
         "ollama" => (
             format!("{}/api/chat", trim(&urls.ollama)),
@@ -160,36 +217,69 @@ async fn chat_once(
                    "temperature": m.temperature, "max_tokens": max_tokens}),
             false,
         ),
+        "openai" if strict_openai => (
+            format!("{}/chat/completions", trim(&urls.openai)),
+            json!({"model": m.model, "messages": msgs, "stream": true, "max_completion_tokens": max_tokens}),
+            false,
+        ),
+        "openai" => (
+            format!("{}/chat/completions", trim(&urls.openai)),
+            json!({"model": m.model, "messages": msgs, "stream": true,
+                   "temperature": m.temperature, "max_tokens": max_tokens}),
+            false,
+        ),
         other => return Err(anyhow!("unknown runtime '{other}'")),
     };
-    let send = |body: &Value| http.post(&url).json(body).send();
+    let send = |body: &Value| {
+        let mut r = http.post(&url).json(body);
+        if m.runtime == "openai" && !urls.openai_key.trim().is_empty() {
+            r = r.bearer_auth(urls.openai_key.trim());
+        }
+        r.send()
+    };
     let mut resp = send(&body).await.map_err(|e| anyhow!("cannot reach {} at {url}: {e}", m.runtime))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        let lower = text.to_lowercase();
+        let fail = |hint: &str| anyhow!("{} returned {status}: {}{hint}", m.runtime, text.chars().take(300).collect::<String>());
+        // Which fix-up, if any, the error asks for. Each retries exactly once.
+        let param_problem = m.runtime == "openai" && (lower.contains("max_completion_tokens") || lower.contains("temperature"));
         // Some chat templates served by LM Studio (Gemma, Mistral variants) reject a
         // system role. Retry once with the system text folded into the first user turn.
-        let lower = text.to_lowercase();
         let role_problem = m.runtime == "lmstudio"
             && status.as_u16() == 400
             && (lower.contains("role") || lower.contains("template") || lower.contains("jinja") || lower.contains("alternate"));
-        if !role_problem {
-            let hint = if m.runtime == "lmstudio" && lower.contains("model") {
-                " (in LM Studio: download/load that model, or enable Just-In-Time loading in Developer settings)"
-            } else {
-                ""
+        if !param_problem && !role_problem {
+            let hint = match (m.runtime.as_str(), status.as_u16()) {
+                ("lmstudio", _) if lower.contains("model") => " (in LM Studio: download/load that model, or enable Just-In-Time loading in Developer settings)",
+                ("openai", 401 | 403) => " (check the API key in Runtimes & hardware)",
+                ("openai", 404) => " (check the base URL and the model name)",
+                ("openai", 429) => " (rate limit or quota reached on the provider's side)",
+                _ => "",
             };
-            return Err(anyhow!("{} returned {status}: {}{hint}", m.runtime, text.chars().take(300).collect::<String>()));
-        }
-        let sys: Vec<&str> = msgs.iter().filter(|x| x.role == "system").map(|x| x.content.as_str()).collect();
-        let mut folded: Vec<ChatMsg> = msgs.iter().filter(|x| x.role != "system").cloned().collect();
-        if let Some(first) = folded.iter_mut().find(|x| x.role == "user") {
-            first.content = format!("{}\n\n{}", sys.join("\n\n"), first.content);
-        } else {
-            folded.insert(0, ChatMsg::new("user", sys.join("\n\n")));
+            return Err(fail(hint));
         }
         let mut b2 = body.clone();
-        b2["messages"] = json!(folded);
+        if param_problem {
+            let o = b2.as_object_mut().unwrap();
+            if lower.contains("max_completion_tokens") {
+                o.remove("max_tokens");
+                o.insert("max_completion_tokens".into(), json!(max_tokens));
+            }
+            if lower.contains("temperature") {
+                o.remove("temperature");
+            }
+        } else {
+            let sys: Vec<&str> = msgs.iter().filter(|x| x.role == "system").map(|x| x.content.as_str()).collect();
+            let mut folded: Vec<ChatMsg> = msgs.iter().filter(|x| x.role != "system").cloned().collect();
+            if let Some(first) = folded.iter_mut().find(|x| x.role == "user") {
+                first.content = format!("{}\n\n{}", sys.join("\n\n"), first.content);
+            } else {
+                folded.insert(0, ChatMsg::new("user", sys.join("\n\n")));
+            }
+            b2["messages"] = json!(folded);
+        }
         resp = send(&b2).await.map_err(|e| anyhow!("cannot reach {} at {url}: {e}", m.runtime))?;
         if !resp.status().is_success() {
             let status = resp.status();
@@ -231,7 +321,7 @@ async fn chat_once(
                 }
                 let v: Value = serde_json::from_str(data).unwrap_or(Value::Null);
                 if let Some(err) = v["error"]["message"].as_str().or_else(|| v["error"].as_str()) {
-                    return Err(anyhow!("lmstudio: {err}"));
+                    return Err(anyhow!("{}: {err}", m.runtime));
                 }
                 // Thinking models stream their reasoning separately. It is kept only as a
                 // last-resort source for the answer, never shown to the agents' peers.
@@ -285,13 +375,13 @@ pub async fn chat_stream(
     msgs: &[ChatMsg],
     mut on_delta: impl FnMut(&str) -> bool,
 ) -> Result<String> {
-    let base = if m.runtime == "lmstudio" { m.max_tokens.max(4096) } else { m.max_tokens };
+    let base = if m.runtime == "lmstudio" || m.runtime == "openai" { m.max_tokens.max(4096) } else { m.max_tokens };
     let (full, reasoning) = chat_once(http, urls, m, msgs, base, &mut on_delta).await?;
     if !strip_think(&full).trim().is_empty() {
         return Ok(full);
     }
     let mut reasoning = reasoning;
-    if m.runtime == "lmstudio" || m.runtime == "ollama" {
+    if m.runtime != "demo" {
         let big = (base * 4).clamp(8192, 16000);
         let (full2, r2) = chat_once(http, urls, m, msgs, big, &mut on_delta).await?;
         if !strip_think(&full2).trim().is_empty() {

@@ -42,6 +42,6 @@ export const running = () => !!S.runId && !!S.M?.started && !S.M.ended && isLive
 
 export function modelsAvailable() {
   const d = S.detection, out = [];
-  for (const rt of ['ollama', 'lmstudio']) for (const m of d?.[rt]?.models ?? []) out.push({ runtime: rt, id: m.id, size: m.size, family: m.family });
+  for (const rt of ['lmstudio', 'ollama', 'openai']) for (const m of d?.[rt]?.models ?? []) out.push({ runtime: rt, id: m.id, size: m.size, family: m.family });
   return out;
 }

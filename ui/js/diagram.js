@@ -150,6 +150,25 @@ export class Floor {
     else if (h.type === 'sandbox') hk.onVessel?.(null);
   }
 
+  /** Directed pairs that exchanged messages although the lab defines no link between them. */
+  offPath() {
+    const M = this.M; if (!M?.lab) return [];
+    const key = `${M.msgs.length}:${M.lab.links.length}:${M.lab.agents.length}`;
+    if (this._opKey === key) return this._op;
+    const ids = new Set(M.lab.agents.map((a) => a.id));
+    const linked = new Set(M.lab.links.flatMap((l) => [`${l.from}|${l.to}`, `${l.to}|${l.from}`]));
+    const map = new Map();
+    M.msgs.forEach((m, i) => {
+      if (!m.to || m.to === 'human' || m.to === m.from || !ids.has(m.from) || !ids.has(m.to)) return;
+      const k = `${m.from}|${m.to}`;
+      if (linked.has(k)) return;
+      const e = map.get(k) ?? { a: m.from, b: m.to, n: 0, last: 0 };
+      e.n++; e.last = i; map.set(k, e);
+    });
+    this._opKey = key; this._op = [...map.values()];
+    return this._op;
+  }
+
   // ----- drawing -----
   loop(now) {
     if (!this.running) return;
@@ -184,6 +203,27 @@ export class Floor {
         ctx.lineWidth = 2; line(ctx, { x: m.x - Math.sin(ang) * 5, y: m.y + Math.cos(ang) * 5 }, { x: m.x + Math.sin(ang) * 5, y: m.y - Math.cos(ang) * 5 });
       } else arrow(ctx, p2, ang, c.strong);
       this.hit.push({ type: 'link', a: l.from, b: l.to, seg: [p1, p2] });
+    }
+
+    // Off-path conversations: when an agent talks to someone it has no predefined
+    // link to, draw an arrow to whoever it is talking to (dashed, so it reads as
+    // "not part of the usual route"). Derived from the log, so replay shows it too.
+    for (const e of this.offPath()) {
+      const A = M.lab.agents.find((x) => x.id === e.a), B = M.lab.agents.find((x) => x.id === e.b);
+      if (!A?.enabled || !B?.enabled) continue;
+      const a = this.pos(e.a), b = this.pos(e.b);
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const p1 = { x: a.x + Math.cos(ang) * (R + 3), y: a.y + Math.sin(ang) * (R + 3) };
+      const p2 = { x: b.x - Math.cos(ang) * (R + 5), y: b.y - Math.sin(ang) * (R + 5) };
+      const active = this.fx.some((f) => f.type === 'msg' && f.a === e.a && f.b === e.b);
+      const recent = M.msgs.length - e.last <= 6;
+      ctx.save();
+      ctx.globalAlpha = active ? 1 : recent ? 0.85 : 0.5;
+      ctx.strokeStyle = active ? c.fg : c.strong; ctx.lineWidth = active ? 1.6 : 1.2; ctx.setLineDash([5, 4]);
+      line(ctx, p1, p2); ctx.setLineDash([]);
+      arrow(ctx, p2, ang, active ? c.fg : c.strong);
+      ctx.restore();
+      this.hit.push({ type: 'link', a: e.a, b: e.b, seg: [p1, p2] });
     }
 
     this.drawCommons(now, animate);
@@ -350,7 +390,9 @@ export class Floor {
     let lines = wrap(ctx, text, maxW - 20);
     const maxLines = 5; let clipped = false;
     if (lines.length > maxLines) { lines = b.streaming ? lines.slice(-maxLines) : lines.slice(0, maxLines); clipped = true; if (!b.streaming) lines[maxLines - 1] = trunc(lines[maxLines - 1] + ' …', 40); }
-    const lh = 16, w = Math.min(maxW, Math.max(...lines.map((l) => ctx.measureText(l).width)) + 20), hgt = lines.length * lh + 26;
+    const head = (b.streaming ? (STAGE_LABEL[b.stage] || 'speaking') : a.name).toUpperCase().slice(0, 30);
+    ctx.font = `600 9px ${c.mono}`; const headW = ctx.measureText(head).width + 20; ctx.font = `12px ${c.sans}`;
+    const lh = 16, w = Math.min(maxW + 40, Math.max(headW, ...lines.map((l) => ctx.measureText(l).width + 20))), hgt = lines.length * lh + 26;
     const above = p.y > hgt + 70;
     let x = clampN2(p.x - w / 2, 8, this.W - w - 8);
     const y = above ? p.y - R - 16 - hgt : p.y + R + 44;
@@ -362,7 +404,7 @@ export class Floor {
     ctx.beginPath(); ctx.moveTo(tx - 6, ty); ctx.lineTo(tx, ty + (above ? 8 : -8)); ctx.lineTo(tx + 6, ty); ctx.fillStyle = c.solid; ctx.fill();
     ctx.beginPath(); ctx.moveTo(tx - 6, ty); ctx.lineTo(tx, ty + (above ? 8 : -8)); ctx.lineTo(tx + 6, ty); ctx.stroke();
     ctx.fillStyle = c.mute; ctx.font = `600 9px ${c.mono}`; ctx.textAlign = 'left';
-    ctx.fillText((b.streaming ? (STAGE_LABEL[b.stage] || 'speaking') : a.name).toUpperCase().slice(0, 30), x + 10, y + 14);
+    ctx.fillText(head, x + 10, y + 14);
     ctx.fillStyle = c.fg; ctx.font = `12px ${c.sans}`;
     lines.forEach((l, i) => ctx.fillText(l, x + 10, y + 30 + i * lh));
     ctx.restore();

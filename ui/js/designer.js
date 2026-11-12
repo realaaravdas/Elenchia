@@ -130,7 +130,7 @@ export function createDesigner(opts = {}) {
     const val = `${a.model.runtime}::${a.model.model}`;
     const msel = h('select', { onchange: () => { const [rt, ...m] = msel.value.split('::'); a.model.runtime = rt; a.model.model = m.join('::'); A.touchLab(); renderBoard(); } },
       h('option', { value: 'demo::scripted-lab' }, 'Scripted demo (no model)'),
-      ['ollama', 'lmstudio'].map((rt) => { const ms = avail.filter((m) => m.runtime === rt); return ms.length ? h('optgroup', { label: rt === 'ollama' ? 'Ollama' : 'LM Studio' }, ms.map((m) => h('option', { value: `${rt}::${m.id}` }, m.id + (m.size ? ` (${(m.size / 1073741824).toFixed(1)} GB)` : '')))) : null; }),
+      ['lmstudio', 'ollama', 'openai'].map((rt) => { const ms = avail.filter((m) => m.runtime === rt); return ms.length ? h('optgroup', { label: { lmstudio: 'LM Studio (local)', ollama: 'Ollama (local)', openai: 'OpenAI-compatible API (cloud)' }[rt] }, ms.map((m) => h('option', { value: `${rt}::${m.id}` }, m.id + (m.size ? ` (${(m.size / 1073741824).toFixed(1)} GB)` : '')))) : null; }),
       avail.some((m) => m.runtime + '::' + m.id === val) || val === 'demo::scripted-lab' ? null : h('option', { value: val }, `${a.model.model} (not installed)`));
     msel.value = val;
     const core = ['generator', 'critic', 'experimentalist', 'statistician'].includes(a.kind);
