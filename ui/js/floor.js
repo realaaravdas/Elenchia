@@ -150,6 +150,7 @@ export function createFloor() {
     el: root,
     update,
     delta: (msgId, from, raw, thought) => floor.delta(msgId, from, raw, thought),
+    retry: (msgId, from, text) => floor.retry(msgId, from, text),
     destroy: () => floor.destroy(),
     floor,
   };

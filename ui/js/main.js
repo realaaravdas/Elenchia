@@ -69,6 +69,11 @@ function refresh(ev, o) { renderRail(); renderTop(); view?.update(ev, o); }
 function handleEvent(p) {
   if (!p.persisted) {
     if (p.run_id !== S.runId && !S.awaiting) return;
+    if (p.kind === 'message_retry') {
+      S.live.delete(p.data.id); S.thought.delete(p.data.id);
+      if (S.view === 'floor') view?.retry?.(p.data.id, p.data.from, p.data.reason);
+      return;
+    }
     if (p.kind === 'message_delta') {
       const id = p.data.id;
       if (p.data.channel === 'thought') S.thought.set(id, (S.thought.get(id) || '') + p.data.text);

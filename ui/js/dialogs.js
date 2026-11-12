@@ -202,6 +202,7 @@ export function appSettingsDialog({ replayTour }) {
   const st = S.settings;
   const lit = h('input', { type: 'checkbox', checked: !!st.literature_enabled });
   const key = h('input', { type: 'password', placeholder: st.openalex_key_set ? 'A key is saved. Type to replace.' : 'Leave empty to use the shared limit' });
+const brave = h('input', { type: 'password', placeholder: st.brave_key_set ? 'A key is saved. Type to replace.' : 'Brave Search API key (free tier available)', autocomplete: 'off' });  const searx = h('input', { type: 'text', value: st.searxng_url || '', placeholder: 'or your own SearXNG, e.g. http://localhost:8080' });
   const calm = h('input', { type: 'checkbox', checked: !!S.calm, onchange: () => A.toggleCalm() });
   const keys = [['1 – 5', 'Switch between the five views'], ['N', 'Start a new run'], ['Esc', 'Close panels'], ['A / R / C / K', 'On a gate: approve, reject, approve with condition, ask the critic again']];
   openModal(h('div', {},
@@ -213,11 +214,13 @@ export function appSettingsDialog({ replayTour }) {
       h('div', { class: 'card pad' }, h('h3', {}, 'Appearance'),
         h('div', { class: 'row', style: { marginTop: '8px' } }, h('span', { style: { flex: 1 } }, 'Theme'), h('button', { class: 'btn sm', onclick: () => A.toggleTheme() }, 'Switch light / dark')),
         h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, calm, h('span', {}, 'Calm mode: freeze the living diagram’s motion'))),
-      h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Online literature search'), pill('experimental', 'dashed')),
-        h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, lit, h('span', {}, 'Let the lab search OpenAlex / Semantic Scholar (asks you each time; sends only the query text)')),
-        h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'OpenAlex API key (optional, free; raises the daily limit)'), key)),
+      h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Online research tools'), pill('experimental', 'dashed')),
+        h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, lit, h('span', {}, 'Let the lab search papers (OpenAlex / Semantic Scholar) and, if configured below, the web. Agents can ask to search during a run; you approve each request and only the query text is sent.')),
+        h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'OpenAlex API key (optional, free; raises the daily limit)'), key),
+        h('div', { class: 'cols2', style: { marginTop: '8px' } }, h('div', { class: 'field' }, h('label', {}, 'Web search: Brave Search key'), brave), h('div', { class: 'field' }, h('label', {}, 'or SearXNG URL'), searx)),
+        h('div', { class: 'hint' }, 'General web search needs one of these; without either, agents can only search papers. Keys are stored unencrypted in the local database.')),
       h('div', { class: 'card pad' }, h('h3', {}, 'Keyboard shortcuts'), kvs(keys))),
     h('div', { class: 'mute', style: { marginTop: '12px' } }, `Data folder: ${st.data_dir}`),
     h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'),
-      h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(st.ollama_url, st.lmstudio_url, { literatureEnabled: lit.checked, openalexKey: key.value }); closeModal(); toast('Settings saved.'); } }, 'Save'))));
+      h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(st.ollama_url, st.lmstudio_url, { literatureEnabled: lit.checked, openalexKey: key.value, braveKey: brave.value, searxngUrl: searx.value }); closeModal(); toast('Settings saved.'); } }, 'Save'))));
 }

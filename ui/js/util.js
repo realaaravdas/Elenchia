@@ -51,8 +51,8 @@ export const STAGE_LABEL = {
   promote: 'drafting the finding',
 };
 export const ARGUE = new Set(['challenge', 'answer', 'resolve', 'finalpass']);
-export const GATE_LABEL = { framing: 'Question framing', experiment: 'Experiment approval', resource: 'Resource & data', promotion: 'Claim promotion', ethics: 'Ethics flag', literature: 'Literature search' };
-export const GATE_ORDER = { ethics: 0, resource: 1, experiment: 2, promotion: 3, framing: 4, literature: 5 };
+export const GATE_LABEL = { framing: 'Question framing', experiment: 'Experiment approval', resource: 'Resource & data', promotion: 'Claim promotion', ethics: 'Ethics flag', literature: 'Literature search', search: 'Search request', recovery: 'Needs a retry' };
+export const GATE_ORDER = { ethics: 0, resource: 1, experiment: 2, promotion: 3, framing: 4, literature: 5, search: 5, recovery: -1 };
 export const GRADE_N = { strong: 4, moderate: 3, weak: 2, inconclusive: 1 };
 
 export function gradeMeter(g) {

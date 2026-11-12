@@ -142,6 +142,10 @@ struct Run {
     refs: Vec<sources::Source>,
     ref_ctx: String,
     literature: Vec<Value>,
+    web: Vec<Value>,
+    searches_left: u32,
+    search_ok: bool,
+    tools_on: bool,
 }
 
 fn strs(v: &Value) -> Vec<String> {
@@ -306,8 +310,8 @@ impl Run {
         if !self.ref_ctx.is_empty() {
             s += &format!("\n{}", self.ref_ctx);
         }
-        if !self.literature.is_empty() {
-            s += &format!("\n{}", scholar::as_context(&self.literature));
+        if !self.literature.is_empty() || !self.web.is_empty() {
+            s += &format!("\n{}", scholar::as_context(&self.literature, &self.web));
         }
         s
     }
@@ -332,45 +336,161 @@ impl Run {
         self.emit("sources", json!({"sources": info}));
     }
 
-    /// Optional web literature search. Never automatic: the human sees and can
-    /// edit the exact text that will leave the machine.
+    fn off_limits_hit(&self, text: &str) -> Option<String> {
+        let t = text.to_lowercase();
+        self.offlimits.iter().find(|o| !o.trim().is_empty() && t.contains(&o.to_lowercase())).cloned()
+    }
+
+    // ---------- online research tools ----------
+    // The only code paths that touch the internet on the lab's behalf. Everything
+    // here is behind a human gate and the master switch in Settings.
+
+    fn web_ready(&self) -> bool {
+        let has = |k: &str| self.st.store.setting(k).map(|v| !v.trim().is_empty()).unwrap_or(false);
+        has("brave_key") || has("searxng_url")
+    }
+
+    /// Fetch readable text for the first few results (open-access PDFs, or the
+    /// top web pages) and keep the passages most relevant to the question.
+    async fn enrich(&self, items: &mut [Value], url_key: &str, how_many: usize) -> usize {
+        let mut got = 0;
+        for it in items.iter_mut() {
+            if got >= how_many || self.secs_left() < 120 || self.halted.load(Ordering::SeqCst) {
+                break;
+            }
+            let Some(url) = it[url_key].as_str().filter(|u| u.starts_with("http")).map(String::from) else { continue };
+            match tokio::time::timeout(Duration::from_secs(40), sources::from_url(&self.st.http, &url)).await {
+                Ok(Ok(src)) => {
+                    let (ex, _) = sources::excerpt(&src.text, &self.question, 1400);
+                    if !ex.trim().is_empty() {
+                        it["fulltext"] = json!(ex);
+                        it["fulltext_chars"] = json!(src.text.chars().count());
+                        got += 1;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        got
+    }
+
+    /// Run one approved search, store the results for every later prompt, log
+    /// them, and return the text the requesting agent should read.
+    async fn run_search(&mut self, kind: &str, query: &str, fulltext: bool, by: &str) -> std::result::Result<String, String> {
+        let st = self.st.clone();
+        if kind == "web" {
+            let (bk, sx) = (st.store.setting("brave_key"), st.store.setting("searxng_url"));
+            let mut res = scholar::web(&st.http, query, bk.as_deref(), sx.as_deref()).await.map_err(|e| e.to_string())?;
+            let base = self.web.len();
+            for (i, r) in res.iter_mut().enumerate() {
+                r["n"] = json!(format!("W{}", base + i + 1));
+            }
+            let read = if fulltext { self.enrich(&mut res, "url", 2).await } else { 0 };
+            self.emit("literature", json!({"kind": "web", "query": query, "results": res, "pages_read": read, "requested_by": by}));
+            let ctx = scholar::as_context(&[], &res);
+            self.web.extend(res);
+            Ok(ctx)
+        } else {
+            let key = st.store.setting("openalex_key");
+            let mut papers = scholar::search(&st.http, query, key.as_deref()).await.map_err(|e| e.to_string())?;
+            let base = self.literature.len();
+            for (i, p) in papers.iter_mut().enumerate() {
+                p["n"] = json!(base + i + 1);
+            }
+            let read = if fulltext { self.enrich(&mut papers, "oa_url", 3).await } else { 0 };
+            self.emit("literature", json!({"kind": "papers", "query": query, "papers": papers, "fulltext_read": read, "requested_by": by}));
+            let ctx = scholar::as_context(&papers, &[]);
+            self.literature.extend(papers);
+            Ok(ctx)
+        }
+    }
+
+    /// The search that opens a run (optional, human-approved, never automatic).
     async fn literature_step(&mut self) -> R<()> {
-        if self.st.store.setting("literature_enabled").as_deref() != Some("1") {
+        if !self.tools_on {
             return Ok(());
         }
-        let detail = json!({"query": self.question.chars().take(240).collect::<String>(),
-            "services": ["OpenAlex (api.openalex.org)", "Semantic Scholar (api.semanticscholar.org) as fallback"]});
+        let detail = json!({"query": self.question.chars().take(240).collect::<String>(), "fulltext": true,
+            "services": ["OpenAlex (api.openalex.org)", "Semantic Scholar (api.semanticscholar.org) as fallback"],
+            "web_ready": self.web_ready(), "searches_left": self.searches_left});
         let d = self.gate("literature", "Search the literature online?", detail).await?;
         if d.decision != "approve" {
-            self.emit("note", json!({"text": "Literature search skipped; the lab works offline."}));
+            self.emit("note", json!({"text": "Literature search skipped; the lab starts offline. Agents may still ask to search later, and you will be asked each time."}));
             return Ok(());
         }
-        let query = d.edits.as_ref().and_then(|e| e["query"].as_str()).unwrap_or(&self.question).trim().to_string();
+        let e = d.edits.clone().unwrap_or(Value::Null);
+        let query = e["query"].as_str().unwrap_or(&self.question).trim().to_string();
+        let fulltext = e["fulltext"].as_bool().unwrap_or(true);
         if let Some(hit) = self.off_limits_hit(&query) {
             self.emit("note", json!({"text": format!("Literature search cancelled: the query touches the off-limits topic “{hit}”.")}));
             return Ok(());
         }
-        let key = self.st.store.setting("openalex_key");
-        match scholar::search(&self.st.http, &query, key.as_deref()).await {
-            Ok(papers) => {
-                self.emit("literature", json!({"query": query, "papers": papers}));
-                self.literature = papers;
-            }
-            Err(e) => self.emit("note", json!({"text": format!("Literature search failed ({e}); continuing offline.")})),
+        if let Err(why) = self.run_search("papers", &query, fulltext, "you").await {
+            self.emit("note", json!({"text": format!("Literature search failed ({why}); continuing offline.")}));
         }
         Ok(())
     }
 
-    fn off_limits_hit(&self, text: &str) -> Option<String> {
-        let t = text.to_lowercase();
-        self.offlimits.iter().find(|o| !o.trim().is_empty() && t.contains(&o.to_lowercase())).cloned()
+    /// An agent asked for a search mid-turn: {"search": {"query": "...", "kind": "papers|web"}}.
+    /// Returns the text to feed back to that agent.
+    async fn tool_search(&mut self, agent: &Agent, req: &Value) -> R<String> {
+        let kind = if req["kind"].as_str() == Some("web") { "web" } else { "papers" };
+        let mut query = req["query"].as_str().unwrap_or("").trim().chars().take(240).collect::<String>();
+        if query.is_empty() {
+            return Ok("The search request had no query. Continue without searching.".into());
+        }
+        if self.searches_left == 0 {
+            return Ok("No searches are left for this run. Continue with what you have.".into());
+        }
+        if kind == "web" && !self.web_ready() {
+            return Ok("Web search is not configured on this machine. Continue without it, or ask for kind \"papers\".".into());
+        }
+        if let Some(hit) = self.off_limits_hit(&query) {
+            return Ok(format!("Search refused: the query touches the off-limits topic “{hit}”. Continue without it."));
+        }
+        let mut fulltext = true;
+        let label = if kind == "web" { "web" } else { "literature" };
+        if !self.search_ok {
+            let svc = if kind == "web" { "Your web search provider (Brave Search or your SearXNG)" } else { "OpenAlex / Semantic Scholar" };
+            let detail = json!({"agent": agent.id, "agent_name": agent.name, "kind": kind, "query": query, "fulltext": true,
+                "services": [svc], "searches_left": self.searches_left});
+            let d = self.gate("search", &format!("{} wants to search the {label}", agent.name), detail).await?;
+            match d.decision.as_str() {
+                "approve" | "grant_run" => {
+                    if d.decision == "grant_run" {
+                        self.search_ok = true;
+                    }
+                    if let Some(e) = &d.edits {
+                        if let Some(q) = e["query"].as_str().filter(|q| !q.trim().is_empty()) {
+                            query = q.trim().to_string();
+                        }
+                        fulltext = e["fulltext"].as_bool().unwrap_or(true);
+                    }
+                }
+                _ => return Ok("The human declined this search. Continue with what you have.".into()),
+            }
+        } else {
+            self.emit("note", json!({"text": format!("{} searched the {label}: “{query}” (allowed for this run)", agent.name)}));
+        }
+        if let Some(hit) = self.off_limits_hit(&query) {
+            return Ok(format!("Search refused: the (edited) query touches the off-limits topic “{hit}”."));
+        }
+        self.searches_left -= 1;
+        match self.run_search(kind, &query, fulltext, &agent.id).await {
+            Ok(ctx) if ctx.trim().is_empty() => Ok("The search returned nothing. Continue with what you have.".into()),
+            Ok(ctx) => Ok(format!("Results for “{query}”:\n{ctx}")),
+            Err(why) => {
+                self.emit("note", json!({"text": format!("Search failed ({why}).")}));
+                Ok(format!("The search failed ({why}). Continue without it."))
+            }
+        }
     }
 
     // ---------- one agent turn ----------
 
     async fn turn(&mut self, kind: &str, stage: &str, to: &str, instruction: String, demo_ctx: Value) -> R<Value> {
         self.check_budget()?;
-        let agent: Agent = self
+        let mut agent: Agent = self
             .lab
             .agent_of(kind)
             .cloned()
@@ -380,40 +500,117 @@ impl Run {
         self.turns += 1;
         self.emit("turn_start", json!({"id": msg_id, "from": agent.id, "to": to, "stage": stage, "round": self.round, "turn": self.turns}));
 
+        let tool_note = if self.tools_on && !matches!(agent.kind.as_str(), "manager" | "scribe") && self.searches_left > 0 {
+            format!(
+                "\n\nOPTIONAL SEARCH TOOL ({} left): only if you truly need outside evidence, reply with ONLY {{\"say\":\"why you need it\",\"search\":{{\"query\":\"specific search terms\",\"kind\":\"papers\" or \"web\"}}}}. The human approves each search; the results come back and you then give your full reply. Do not search for what you already have.",
+                self.searches_left
+            )
+        } else {
+            String::new()
+        };
         let system = format!(
-            "You are {}, the {} of a research lab.\n{}\n{}\nHow you disagree with colleagues: {}\n\n{}\n\nJSON shape to return:\n{}",
+            "You are {}, the {} of a research lab.\n{}\n{}\nHow you disagree with colleagues: {}\n\n{}\n\nJSON shape to return:\n{}{}",
             agent.name,
             agent.kind,
             agent.brief,
             roles::disposition_text(agent.disposition),
             if agent.disagree.is_empty() { "Be direct and specific." } else { &agent.disagree },
             PROTOCOL,
-            shape
+            shape,
+            tool_note
         );
         let user = format!("{}\n{}", self.context_block(), instruction);
         let mut msgs = vec![ChatMsg::new("system", system.clone()), ChatMsg::new("user", user.clone())];
 
-        let mut attempts = 0;
+        let mut attempts = 0u32; // invalid-output attempts since the last fresh start
+        let mut net_tries = 0u32; // transport retries since the last success
+        let mut tool_rounds = 0u32;
+        let mut repairs: Vec<String> = vec![];
+        let mut last_text = String::new();
+        let mut total_attempts = 0u32;
         let value = loop {
-            attempts += 1;
+            total_attempts += 1;
             let text = if agent.model.runtime == "demo" {
                 self.demo_stream(&msg_id, &agent, stage, &demo_ctx).await?
             } else {
-                self.model_stream(&msg_id, &agent, &msgs).await?
+                match self.model_stream(&msg_id, &agent, &msgs).await {
+                    Ok(t) => {
+                        net_tries = 0;
+                        t
+                    }
+                    Err(Stop::Error(e)) => {
+                        let (code, why, transient) = diagnose(&e);
+                        if transient && net_tries < 3 {
+                            net_tries += 1;
+                            let wait = [2u64, 6, 15][net_tries as usize - 1];
+                            self.live("message_retry", json!({"id": msg_id, "from": agent.id, "reason": format!("{why} Retrying in {wait}s ({net_tries}/3)…")}));
+                            self.pause(wait).await?;
+                            continue;
+                        }
+                        self.emit("turn_failed", json!({"id": msg_id, "from": agent.id, "reason": e}));
+                        let edits = self.recovery_gate(&agent, stage, code, &why, &e, &last_text).await?;
+                        self.apply_recovery(&mut agent, &edits);
+                        net_tries = 0;
+                        attempts = 0;
+                        continue;
+                    }
+                    Err(other) => return Err(other),
+                }
             };
-            match parse_json(&text).and_then(|v| validate(&v, required).map(|_| v)) {
+            last_text = text.clone();
+
+            // The agent may ask for a search instead of answering.
+            if self.tools_on && tool_rounds < 2 {
+                if let Ok(v) = parse_json(&text) {
+                    if v["search"].is_object() {
+                        tool_rounds += 1;
+                        let note = self.tool_search(&agent, &v["search"]).await?;
+                        msgs.push(ChatMsg::new("assistant", text));
+                        msgs.push(ChatMsg::new(
+                            "user",
+                            format!("{note}\n\nNow give your complete reply in the required JSON shape. Cite sources as [n] or [Wn]."),
+                        ));
+                        continue;
+                    }
+                }
+            }
+
+            // 1) as written, 2) deterministic repair (no model involved).
+            let strict = parse_json(&text).and_then(|v| validate(&v, required).map(|_| v));
+            let outcome = match strict {
+                Ok(v) => Ok(v),
+                Err(why) => match repair(&text, required) {
+                    Some((v, fixes)) => {
+                        repairs = fixes;
+                        Ok(v)
+                    }
+                    None => Err(why),
+                },
+            };
+            match outcome {
                 Ok(v) => break v,
                 Err(why) => {
-                    if attempts >= 3 {
+                    attempts += 1;
+                    let (code, diag) = diagnose_output(&text, &why);
+                    if attempts >= 4 {
                         self.emit("turn_failed", json!({"id": msg_id, "from": agent.id, "reason": why}));
-                        return Err(Stop::Error(format!(
-                            "{} returned invalid output 3 times ({why}). Try a larger or more instruction-following model for this role.",
-                            agent.name
-                        )));
+                        let edits = self.recovery_gate(&agent, stage, code, &diag, &why, &text).await?;
+                        self.apply_recovery(&mut agent, &edits);
+                        attempts = 0;
+                        net_tries = 0;
+                        continue;
                     }
-                    self.live("message_retry", json!({"id": msg_id, "reason": why}));
+                    // Adapt the next attempt to the diagnosis instead of repeating the same request.
+                    if code == "truncated" {
+                        agent.model.max_tokens = (agent.model.max_tokens.max(1800) * 2).min(16000);
+                    }
+                    agent.model.temperature = (agent.model.temperature - 0.15).max(0.1);
+                    self.live("message_retry", json!({"id": msg_id, "from": agent.id, "reason": format!("{diag} Trying again ({attempts}/4)…")}));
                     msgs.push(ChatMsg::new("assistant", text));
-                    msgs.push(ChatMsg::new("user", format!("That reply was rejected: {why}. Return ONLY the JSON object in the required shape.")));
+                    msgs.push(ChatMsg::new(
+                        "user",
+                        format!("That reply was rejected: {why}. Return ONLY one JSON object with exactly these keys filled in (no markdown fences, no commentary, no extra text):\n{shape}"),
+                    ));
                 }
             }
         };
@@ -425,13 +622,59 @@ impl Run {
                 "say": value["say"], "data": value,
                 "model": format!("{}:{}", agent.model.runtime, agent.model.model),
                 "scripted": agent.model.runtime == "demo",
-                "temperature": agent.model.temperature, "attempts": attempts,
+                "temperature": agent.model.temperature, "attempts": total_attempts, "repairs": repairs,
                 "prompt": {"system": system, "user": user},
             }),
         );
         self.check_flags(&value, &agent).await?;
         Ok(value)
     }
+
+    /// Sleep in one-second steps so a halt is noticed promptly.
+    async fn pause(&self, secs: u64) -> R<()> {
+        for _ in 0..secs {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            if self.halted.load(Ordering::SeqCst) {
+                return Err(Stop::Halted("halted by you".into()));
+            }
+        }
+        Ok(())
+    }
+
+    /// Automatic fixes ran out. Stop and ask the human instead of killing the run:
+    /// retry as-is, retry with a different model / token limit / temperature, or halt.
+    async fn recovery_gate(&mut self, agent: &Agent, stage: &str, code: &str, diagnosis: &str, raw: &str, last: &str) -> R<Value> {
+        let detail = json!({
+            "agent": agent.id, "agent_name": agent.name, "stage": stage, "code": code, "diagnosis": diagnosis,
+            "error": raw.chars().take(400).collect::<String>(), "last_output": last.chars().take(700).collect::<String>(),
+            "model": {"runtime": agent.model.runtime, "model": agent.model.model, "max_tokens": agent.model.max_tokens, "temperature": agent.model.temperature},
+        });
+        let d = self.gate("recovery", &format!("{} needs a retry", agent.name), detail).await?;
+        if d.decision == "halt" {
+            return Err(Stop::Halted("stopped at the retry prompt".into()));
+        }
+        Ok(d.edits.unwrap_or(Value::Null))
+    }
+
+    /// Apply the human's recovery changes to this turn and to the rest of the run.
+    fn apply_recovery(&mut self, agent: &mut Agent, e: &Value) {
+        if let Some(m) = e["model"].as_str().filter(|m| m.contains("::")) {
+            let (rt, id) = m.split_once("::").unwrap();
+            agent.model.runtime = rt.to_string();
+            agent.model.model = id.to_string();
+        }
+        if let Some(t) = e["max_tokens"].as_u64().filter(|t| *t >= 256) {
+            agent.model.max_tokens = t.min(32000) as u32;
+        }
+        if let Some(t) = e["temperature"].as_f64() {
+            agent.model.temperature = (t as f32).clamp(0.0, 1.5);
+        }
+        if let Some(a) = self.lab.agents.iter_mut().find(|a| a.id == agent.id) {
+            a.model = agent.model.clone();
+        }
+        self.emit("note", json!({"text": format!("Retrying {} with {}:{} (max tokens {}, temperature {:.2}).", agent.name, agent.model.runtime, agent.model.model, agent.model.max_tokens, agent.model.temperature)}));
+    }
+
 
     async fn model_stream(&self, msg_id: &str, agent: &Agent, msgs: &[ChatMsg]) -> R<String> {
         let remaining = self.deadline.saturating_duration_since(Instant::now()).min(Duration::from_secs(420));
@@ -1074,6 +1317,7 @@ pub async fn start(st: Arc<AppState>, lab: Lab, p: StartParams) -> Result<String
     let halted = Arc::new(AtomicBool::new(false));
     st.halts.lock().unwrap().insert(id.clone(), halted.clone());
     let python = sandbox::find_python().await;
+    let tools_on = st.store.setting("literature_enabled").as_deref() == Some("1");
     let refs: Vec<sources::Source> = {
         let mut pool = st.sources.lock().unwrap();
         p.source_ids.iter().filter_map(|sid| pool.remove(sid)).collect()
@@ -1104,6 +1348,10 @@ pub async fn start(st: Arc<AppState>, lab: Lab, p: StartParams) -> Result<String
             refs,
             ref_ctx: String::new(),
             literature: vec![],
+            web: vec![],
+            searches_left: 4,
+            search_ok: false,
+            tools_on,
         };
         let res = r.drive().await;
         let (status, reason) = match res {
@@ -1138,4 +1386,305 @@ pub fn halt(st: &AppState, run_id: &str) {
     }
     // Dropping the senders wakes any gate the run is blocked on.
     st.pending.lock().unwrap().retain(|_, p| p.run_id != run_id);
+}
+
+// ---------- diagnosis and deterministic repair (no model involved) ----------
+
+/// Plain-language diagnosis of a transport/model error from its text alone.
+/// Returns (code, explanation, worth retrying automatically).
+fn diagnose(err: &str) -> (&'static str, String, bool) {
+    let e = err.to_lowercase();
+    let has = |s: &[&str]| s.iter().any(|x| e.contains(x));
+    if has(&["cannot reach", "connection refused", "error sending request", "connect error", "dns"]) {
+        ("unreachable", "The model server cannot be reached. Start LM Studio's server (Developer tab, Start Server) or check the URL in Runtimes & hardware.".into(), true)
+    } else if has(&["429", "rate limit", "quota"]) {
+        ("rate_limit", "The provider is rate limiting this key. Waiting before retrying.".into(), true)
+    } else if has(&["500", "502", "503", "504", "overloaded", "stream broke", "timed out", "timeout"]) {
+        ("server", "The model server hiccuped (overloaded, restarting or the connection dropped).".into(), true)
+    } else if has(&["no answer", "spent its whole", "empty reply"]) {
+        ("no_answer", "The model produced no answer. Usually a thinking model that used its whole token budget reasoning: turn thinking off for it in LM Studio, raise max tokens, or pick another model.".into(), false)
+    } else if has(&["401", "403", "api key"]) {
+        ("auth", "The API key was rejected. Check it in Runtimes & hardware.".into(), false)
+    } else if has(&["404", "not found", "no such model", "model_not_found", "failed to load", "not loaded"]) {
+        ("model", "The model is not available. In LM Studio load it (or enable Just-In-Time loading); otherwise pick a model that is installed.".into(), false)
+    } else if has(&["context", "too long", "maximum"]) {
+        ("context", "The prompt is longer than the model's context window. Raise the context length in LM Studio, or use a model with a longer one.".into(), false)
+    } else {
+        ("other", "The model call failed for an unrecognised reason (see the error below).".into(), false)
+    }
+}
+
+/// Why a reply was unusable, judged from the text alone.
+fn diagnose_output(text: &str, why: &str) -> (&'static str, String) {
+    let t = runtime::strip_think(text);
+    let t = t.trim();
+    let (open, close) = (t.matches('{').count(), t.matches('}').count());
+    if t.is_empty() {
+        ("empty", "The model returned nothing usable.".into())
+    } else if !t.contains('{') {
+        ("no_json", "The model answered in prose instead of the required JSON.".into())
+    } else if open > close {
+        ("truncated", "The reply was cut off before the JSON finished (token limit). Raising the limit for the next attempt.".into())
+    } else {
+        ("schema", format!("The JSON was valid but did not match the required shape ({why})."))
+    }
+}
+
+fn aliases(key: &str) -> &'static [&'static str] {
+    match key {
+        "summary" => &["result", "results", "conclusion", "analysis", "findings", "explanation", "interpretation"],
+        "finding" => &["claim", "conclusion", "result", "summary"],
+        "protocol" => &["procedure", "method", "methods", "steps", "design", "plan"],
+        "code" => &["python", "script", "program", "source"],
+        "title" => &["name", "heading"],
+        "test" => &["statistical_test", "method"],
+        "hypotheses" => &["hypothesis", "ideas", "candidates"],
+        "objections" => &["objection", "issues", "critiques", "concerns", "weaknesses"],
+        "answers" => &["answer", "responses", "replies"],
+        "verdicts" => &["judgments", "judgements", "rulings"],
+        "remaining_objections" => &["objections", "open_objections", "remaining"],
+        "restated_question" => &["question", "restated", "restatement"],
+        "verdict" => &["decision", "outcome"],
+        "status" => &["state"],
+        "grade" => &["evidence_grade", "strength", "evidence"],
+        _ => &[],
+    }
+}
+
+/// Close any unterminated strings/brackets of a cut-off JSON document.
+fn close_json(s: &str) -> String {
+    let (mut stack, mut in_str, mut esc) = (Vec::new(), false, false);
+    let mut out = String::from(s);
+    for ch in s.chars() {
+        if in_str {
+            if esc {
+                esc = false;
+            } else if ch == '\\' {
+                esc = true;
+            } else if ch == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_str = true,
+            '{' => stack.push('}'),
+            '[' => stack.push(']'),
+            '}' | ']' => {
+                stack.pop();
+            }
+            _ => {}
+        }
+    }
+    if in_str {
+        out.push('"');
+    }
+    let trimmed = out.trim_end().to_string();
+    out = if trimmed.ends_with(',') {
+        trimmed[..trimmed.len() - 1].to_string()
+    } else if trimmed.ends_with(':') {
+        format!("{trimmed} null")
+    } else {
+        trimmed
+    };
+    while let Some(c) = stack.pop() {
+        out.push(c);
+    }
+    out
+}
+
+/// Drop commas that sit directly before a closing brace/bracket (outside strings).
+fn strip_trailing_commas(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let (mut out, mut in_str, mut esc) = (String::with_capacity(s.len()), false, false);
+    for (i, &ch) in chars.iter().enumerate() {
+        if in_str {
+            out.push(ch);
+            if esc {
+                esc = false;
+            } else if ch == '\\' {
+                esc = true;
+            } else if ch == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        if ch == '"' {
+            in_str = true;
+        }
+        if ch == ',' {
+            let next = chars[i + 1..].iter().find(|c| !c.is_whitespace());
+            if matches!(next, Some('}') | Some(']')) {
+                continue;
+            }
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Try hard to read a JSON object out of messy model output.
+fn lenient_parse(text: &str, fixes: &mut Vec<String>) -> Option<Value> {
+    let cleaned = runtime::strip_think(text);
+    let mut s = cleaned.trim().to_string();
+    if s.contains("```") {
+        s = s.lines().filter(|l| !l.trim_start().starts_with("```")).collect::<Vec<_>>().join("\n");
+        fixes.push("removed markdown fences".into());
+    }
+    let start = s.find('{')?;
+    let body = &s[start..];
+    let end = body.rfind('}').map(|e| e + 1).unwrap_or(body.len());
+    let tries = [
+        (body[..end].to_string(), None),
+        (strip_trailing_commas(&body[..end]), Some("removed trailing commas")),
+        (close_json(&strip_trailing_commas(body)), Some("closed a cut-off JSON document")),
+    ];
+    for (cand, note) in tries {
+        if let Ok(v) = serde_json::from_str::<Value>(&cand) {
+            if v.is_object() {
+                if let Some(n) = note {
+                    fixes.push(n.into());
+                }
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// Deterministic repair: lenient parsing, key normalisation, type coercion and
+/// synonym lookup. Every change is reported, so the log shows what was fixed.
+fn repair(text: &str, required: &[(&str, &str)]) -> Option<(Value, Vec<String>)> {
+    let mut fixes: Vec<String> = vec![];
+    let mut v = lenient_parse(text, &mut fixes)?;
+    let obj = v.as_object_mut()?;
+    // Normalise key spelling: "Summary", "final-answer" -> "summary", "final_answer".
+    let norm: Vec<(String, String)> = obj
+        .keys()
+        .map(|k| (k.clone(), k.trim().to_lowercase().replace([' ', '-'], "_")))
+        .filter(|(a, b)| a != b)
+        .collect();
+    for (old, new) in norm {
+        if !obj.contains_key(&new) {
+            if let Some(val) = obj.remove(&old) {
+                obj.insert(new.clone(), val);
+                fixes.push(format!("renamed key \"{old}\" to \"{new}\""));
+            }
+        }
+    }
+    for (k, ty) in required {
+        let ok = |o: &serde_json::Map<String, Value>| match *ty {
+            "str" => o.get(*k).and_then(|x| x.as_str()).map(|s| !s.trim().is_empty()).unwrap_or(false),
+            "arr" => o.get(*k).map(|x| x.is_array()).unwrap_or(false),
+            "num" => o.get(*k).map(|x| x.is_number()).unwrap_or(false),
+            _ => o.get(*k).map(|x| !x.is_null()).unwrap_or(false),
+        };
+        if ok(obj) {
+            continue;
+        }
+        // Wrong type present: coerce it.
+        if let Some(cur) = obj.get(*k).cloned() {
+            let coerced = match (*ty, &cur) {
+                ("str", Value::Number(n)) => Some(json!(n.to_string())),
+                ("str", Value::Bool(b)) => Some(json!(b.to_string())),
+                ("str", Value::Array(a)) => Some(json!(a.iter().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect::<Vec<_>>().join("; "))),
+                ("str", Value::Object(_)) => Some(json!(cur.to_string())),
+                ("arr", Value::Object(_)) => Some(json!([cur.clone()])),
+                ("arr", Value::String(s)) if !s.trim().is_empty() => Some(json!(s.lines().map(|l| l.trim().trim_start_matches(['-', '*', '•']).trim()).filter(|l| !l.is_empty()).collect::<Vec<_>>())),
+                ("num", Value::String(s)) => s.trim().parse::<f64>().ok().map(|n| json!(n)),
+                _ => None,
+            };
+            if let Some(c) = coerced {
+                obj.insert((*k).to_string(), c);
+                fixes.push(format!("converted \"{k}\" to the expected type"));
+                if ok(obj) {
+                    continue;
+                }
+            }
+        }
+        // Missing: look for a synonym the model used instead.
+        let mut found = false;
+        for alt in aliases(k) {
+            if let Some(val) = obj.get(*alt).cloned() {
+                let usable = match *ty {
+                    "str" => val.is_string() || val.is_number() || val.is_array(),
+                    "arr" => val.is_array() || val.is_object(),
+                    _ => !val.is_null(),
+                };
+                if usable {
+                    let c = match (*ty, &val) {
+                        ("str", Value::Array(a)) => json!(a.iter().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect::<Vec<_>>().join("; ")),
+                        ("str", Value::Number(n)) => json!(n.to_string()),
+                        ("arr", Value::Object(_)) => json!([val.clone()]),
+                        _ => val.clone(),
+                    };
+                    obj.insert((*k).to_string(), c);
+                    fixes.push(format!("used \"{alt}\" as \"{k}\""));
+                    found = true;
+                    break;
+                }
+            }
+        }
+        // Last resort for plain text fields: the agent's own "say".
+        if !found && *ty == "str" && *k != "say" {
+            if let Some(s) = obj.get("say").and_then(|x| x.as_str()).filter(|s| !s.trim().is_empty()).map(String::from) {
+                obj.insert((*k).to_string(), json!(s));
+                fixes.push(format!("used the agent's own \"say\" text for \"{k}\""));
+            }
+        }
+    }
+    if validate(&v, required).is_ok() {
+        Some((v, fixes))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const ANALYZE: &[(&str, &str)] = &[("say", "str"), ("grade", "str"), ("verdict", "str"), ("summary", "str")];
+
+    #[test]
+    fn repairs_truncated_json() {
+        let t = r#"{"say":"ok","grade":"weak","verdict":"supports","summary":"p=0.04, n=5"#;
+        let (v, fixes) = repair(t, ANALYZE).expect("repairable");
+        assert_eq!(v["summary"], "p=0.04, n=5");
+        assert!(fixes.iter().any(|f| f.contains("cut-off")));
+    }
+
+    #[test]
+    fn uses_synonym_and_fences_and_commas() {
+        let t = "<think>hmm {x}</think>\n```json\n{\"say\":\"s\",\"grade\":\"weak\",\"verdict\":\"refutes\",\"result\":\"effect vanished\",}\n```";
+        let (v, fixes) = repair(t, ANALYZE).expect("repairable");
+        assert_eq!(v["summary"], "effect vanished");
+        assert!(fixes.iter().any(|f| f.contains("result")));
+    }
+
+    #[test]
+    fn coerces_types_and_key_case() {
+        let t = r#"{"Say":"s","Grade":"weak","verdict":"supports","summary":["a","b"]}"#;
+        let (v, _) = repair(t, ANALYZE).expect("repairable");
+        assert_eq!(v["summary"], "a; b");
+        assert_eq!(v["grade"], "weak");
+    }
+
+    #[test]
+    fn does_not_invent_missing_content() {
+        // No summary, no synonym, no say: must NOT be "repaired".
+        assert!(repair(r#"{"grade":"weak","verdict":"supports"}"#, ANALYZE).is_none());
+    }
+
+    #[test]
+    fn diagnoses_without_a_model() {
+        assert_eq!(diagnose("Critic: cannot reach lmstudio at http://127.0.0.1:1234").0, "unreachable");
+        assert!(diagnose("lmstudio returned 503").2);
+        assert_eq!(diagnose("openai returned 401 Unauthorized").0, "auth");
+        assert_eq!(diagnose_output("{\"say\":\"x\",\"summary\":\"cut", "m").0, "truncated");
+        assert_eq!(diagnose_output("I think it works.", "m").0, "no_json");
+        assert_eq!(strip_think_len("<think>a</think>b"), 1);
+    }
+    fn strip_think_len(s: &str) -> usize {
+        runtime::strip_think(s).trim().len()
+    }
 }

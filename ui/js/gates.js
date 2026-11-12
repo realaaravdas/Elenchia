@@ -3,7 +3,7 @@
 // a code diff, runtime estimate and risk, never a vague "continue?".
 
 import { h, put, diffView, gradeMeter, statusPill, pill, GATE_LABEL, toast, trunc } from './util.js';
-import { A, S } from './state.js';
+import { A, S, modelsAvailable } from './state.js';
 import { agentName } from './model.js';
 
 const kvs = (pairs) => h('dl', { class: 'kv' }, pairs.filter(Boolean).flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));
@@ -88,15 +88,42 @@ export function gateControls(g, opts = {}) {
       why);
   }
 
-  if (g.kind === 'literature') {
+  if (g.kind === 'literature' || g.kind === 'search') {
     const q = h('textarea', { rows: 3 }, d.query);
+    const full = h('input', { type: 'checkbox', checked: d.fulltext !== false });
+    const web = d.kind === 'web';
     put(wrap,
+      g.kind === 'search' ? h('div', {}, h('b', {}, d.agent_name), ` asks to search the ${web ? 'web' : 'literature'}. ${d.searches_left} search${d.searches_left === 1 ? '' : 'es'} left in this run.`) : null,
       h('div', { class: 'card pad blocked' }, h('div', { class: 'cap' }, 'Experimental · leaves this machine'),
         h('div', { style: { marginTop: '4px' } }, 'Only the text below is sent, to: ', (d.services || []).join(' · '), '. Nothing else about your lab, data or models is shared.')),
       h('div', { class: 'field' }, h('label', {}, 'Search query (edit before sending)'), q),
+      h('label', { class: 'row', style: { gap: '8px' } }, full, h('span', {}, web ? 'Also read the top 2 result pages' : 'Also read the free full text of the top results (open-access PDFs)')),
       h('div', { class: 'btn-row' },
-        h('button', { class: 'btn primary', ...key('a'), onclick: () => decide(g, 'approve', null, { query: q.value }) }, 'Search ', h('kbd', {}, 'A')),
-        h('button', { class: 'btn', ...key('r'), onclick: () => decide(g, 'skip') }, 'Skip, stay offline ', h('kbd', {}, 'R'))));
+        h('button', { class: 'btn primary', ...key('a'), onclick: () => decide(g, 'approve', null, { query: q.value, fulltext: full.checked }) }, 'Search ', h('kbd', {}, 'A')),
+        g.kind === 'search' ? h('button', { class: 'btn', ...key('g'), onclick: () => decide(g, 'grant_run', null, { query: q.value, fulltext: full.checked }) }, 'Allow searches for this run ', h('kbd', {}, 'G')) : null,
+        h('button', { class: 'btn', ...key('r'), onclick: () => decide(g, g.kind === 'search' ? 'deny' : 'skip') }, g.kind === 'search' ? 'Decline ' : 'Skip, stay offline ', h('kbd', {}, 'R'))));
+  }
+
+  if (g.kind === 'recovery') {
+    const m = d.model || {};
+    const cur = `${m.runtime}::${m.model}`;
+    const sel = h('select', {}, h('option', { value: '' }, `Keep ${m.runtime}:${m.model}`),
+      modelsAvailable().filter((x) => `${x.runtime}::${x.id}` !== cur).map((x) => h('option', { value: `${x.runtime}::${x.id}` }, `${x.runtime}: ${x.id}`)));
+    const tok = h('input', { type: 'number', value: m.max_tokens, min: 256, max: 32000 });
+    const temp = h('input', { type: 'number', value: Number(m.temperature).toFixed(2), min: 0, max: 1.5, step: 0.05 });
+    const edits = () => ({ model: sel.value || null, max_tokens: +tok.value, temperature: +temp.value });
+    put(wrap,
+      h('div', { class: 'card pad blocked' }, h('div', { class: 'cap' }, `${d.agent_name} · ${d.stage} · automatic fixes ran out`), h('div', { style: { marginTop: '4px' } }, d.diagnosis)),
+      d.error ? h('div', { class: 'mute' }, h('b', {}, 'Error: '), d.error) : null,
+      d.last_output ? h('details', {}, h('summary', { class: 'dim' }, 'Last thing the model said'), h('pre', { class: 'code' }, d.last_output)) : null,
+      h('div', { class: 'cols3' },
+        h('div', { class: 'field' }, h('label', {}, 'Model for this role'), sel),
+        h('div', { class: 'field' }, h('label', {}, 'Max tokens'), tok),
+        h('div', { class: 'field' }, h('label', {}, 'Temperature'), temp)),
+      h('div', { class: 'hint' }, 'The run is paused, not lost. Retrying continues from this exact step; changes apply to this role for the rest of the run.'),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn primary', ...key('a'), onclick: () => decide(g, 'retry', null, edits()) }, 'Retry ', h('kbd', {}, 'A')),
+        h('button', { class: 'btn', ...key('r'), onclick: () => decide(g, 'halt') }, 'Stop the run ', h('kbd', {}, 'R'))));
   }
 
   if (g.kind === 'ethics') {

@@ -116,7 +116,7 @@ export function createNotebook(opts = {}) {
       return;
     }
     const q = M.framed?.question ?? M.started.question;
-    const toc = [['question', 'Question'], ['findings', 'Findings'], ...((M.sources?.length || M.literature) ? [['sources', 'Sources']] : []), ['hypotheses', 'Hypotheses'], ['experiments', 'Experiments'], ['decisions', 'Decisions'], ['audit', 'Audit log']];
+    const toc = [['question', 'Question'], ['findings', 'Findings'], ...((M.sources?.length || M.searches?.length) ? [['sources', 'Sources']] : []), ['hypotheses', 'Hypotheses'], ['experiments', 'Experiments'], ['decisions', 'Decisions'], ['audit', 'Audit log']];
     const left = h('nav', { class: 'nb-toc' }, toc.map(([id, t]) => h('a', { onclick: () => $('#nb-' + id, page)?.scrollIntoView({ behavior: 'smooth' }) }, t)),
       h('hr', { class: 'hr' }),
       h('button', { class: 'btn sm', onclick: () => download(`elenchia-notebook-${S.runId.slice(0, 8)}.md`, toMarkdown(M, S.runs.find((r) => r.id === S.runId))) }, 'Export Markdown'));
@@ -134,16 +134,17 @@ export function createNotebook(opts = {}) {
         h('p', { style: { margin: '8px 0' } }, f.text),
         h('div', { class: 'mute' }, `${f.hypothesis} · ${f.experiment} · decided: ${f.decided}${f.downgraded ? ' · status capped by lab rules' : ''}`),
         (f.caveats || []).map((c) => h('div', { class: 'dim' }, '· ' + c))))) : h('div', { class: 'empty' }, 'Nothing has been promoted. Claims are tentative until you promote them.')),
-      (M.sources?.length || M.literature) ? sec('sources', 'Sources', pill('experimental', 'dashed'),
+      (M.sources?.length || M.searches?.length) ? sec('sources', 'Sources', pill('experimental', 'dashed'),
         M.sources?.length ? h('div', { class: 'stack' }, M.sources.map((s) => h('div', { class: 'card pad' },
           h('div', { class: 'row' }, pill(s.n), h('b', {}, s.name), h('span', { class: 'mute' }, `${s.kind} · ${s.truncated ? `${s.shown} of ${s.chars} chars read` : `${s.chars} chars`}`)),
           h('div', { class: 'mute', style: { marginTop: '4px' } }, trunc(s.origin, 100))))) : null,
-        M.literature ? h('div', { class: 'stack', style: { marginTop: '10px' } }, h('div', { class: 'cap' }, `Literature search: “${trunc(M.literature.query, 90)}”`),
-          M.literature.papers.map((p) => h('div', { class: 'card pad' },
-            h('div', { class: 'row' }, pill(`[${p.n}]`), h('b', { style: { flex: 1 } }, p.title), p.year ? pill(String(p.year)) : null),
-            h('div', { class: 'mute' }, `${p.authors}${p.venue ? ' · ' + p.venue : ''}${p.cited_by != null ? ' · cited ' + p.cited_by : ''} · ${p.source}`),
-            p.abstract ? h('div', { class: 'dim', style: { marginTop: '4px' } }, trunc(p.abstract, 260)) : null,
-            p.url ? h('a', { href: p.url, target: '_blank', rel: 'noopener noreferrer', class: 'mute' }, p.url) : null))) : null) : null,
+        (M.searches || []).map((sr) => h('div', { class: 'stack', style: { marginTop: '10px' } },
+          h('div', { class: 'cap' }, `${sr.kind === 'web' ? 'Web search' : 'Literature search'} by ${sr.requested_by === 'you' ? 'you' : agentName(M, sr.requested_by)}: “${trunc(sr.query, 90)}”${(sr.fulltext_read || sr.pages_read) ? ` · ${sr.fulltext_read || sr.pages_read} read in full` : ''}`),
+          (sr.papers || sr.results || []).map((p) => h('div', { class: 'card pad' },
+            h('div', { class: 'row' }, pill(p.kind === 'web' || sr.kind === 'web' ? `[${p.n}]` : `[${p.n}]`), h('b', { style: { flex: 1 } }, p.title), p.year ? pill(String(p.year)) : null, p.fulltext ? pill('full text', 'solid') : null),
+            sr.kind === 'web' ? null : h('div', { class: 'mute' }, `${p.authors}${p.venue ? ' · ' + p.venue : ''}${p.cited_by != null ? ' · cited ' + p.cited_by : ''} · ${p.source}`),
+            (p.abstract || p.snippet) ? h('div', { class: 'dim', style: { marginTop: '4px' } }, trunc(p.abstract || p.snippet, 260)) : null,
+            p.url ? h('a', { href: p.url, target: '_blank', rel: 'noopener noreferrer', class: 'mute' }, p.url) : null))))) : null,
       sec('hypotheses', 'Hypotheses', h('div', { class: 'stack' }, [...M.hyps.values()].map((hy) => h('div', { class: 'hcard', id: 'nb-hyp-' + hy.id },
         h('div', { class: 'row' }, h('span', { class: 'mono', style: { fontWeight: 700 } }, hy.id), statusPill(hy.status), h('span', { class: 'mute', style: { flex: 1 } }, 'round ' + hy.round), hy.evidence ? gradeMeter(hy.evidence.grade) : null),
         h('div', { class: 'claim' }, hy.claim), h('div', { class: 'pred' }, 'Predicts: ' + hy.prediction),
