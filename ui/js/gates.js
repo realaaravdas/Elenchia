@@ -106,6 +106,18 @@ export function gateControls(g, opts = {}) {
         h('button', { class: 'btn', ...key('r'), onclick: () => decide(g, g.kind === 'search' ? 'deny' : 'skip') }, g.kind === 'search' ? 'Decline ' : 'Skip, stay offline ', h('kbd', {}, 'R'))));
   }
 
+  if (g.kind === 'budget') {
+    const mins = h('input', { type: 'number', value: 15, min: 1, max: 720 });
+    const turns = h('input', { type: 'number', value: 20, min: 0, max: 500 });
+    put(wrap,
+      h('div', { class: 'card pad blocked' }, h('div', { class: 'cap' }, d.time_hit ? 'Time budget reached' : 'Turn budget reached'),
+        h('div', { style: { marginTop: '4px' } }, d.reason), h('div', { class: 'dim', style: { marginTop: '6px' } }, `${d.turns} of ${d.max_turns} turns used. The run is paused, not lost: extend it and it continues from this exact step.`)),
+      h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'Add minutes'), mins), h('div', { class: 'field' }, h('label', {}, 'Add turns'), turns)),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn primary', ...key('a'), onclick: () => decide(g, 'extend', null, { minutes: +mins.value, turns: +turns.value }) }, 'Extend and continue ', h('kbd', {}, 'A')),
+        h('button', { class: 'btn', ...key('r'), onclick: () => decide(g, 'stop') }, 'Stop the run ', h('kbd', {}, 'R'))));
+  }
+
   if (g.kind === 'recovery') {
     const m = d.model || {};
     const cur = `${m.runtime}::${m.model}`;

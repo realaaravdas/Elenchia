@@ -292,7 +292,17 @@ async fn chat_once(
     let mut full = String::new();
     let mut reasoning = String::new();
     let mut pending: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
+    let mut got_any = false;
+    loop {
+        // A slow but steady stream is fine. Only silence is a problem: long before the first
+        // word (a cold model can take a while to load), shorter once it has started.
+        let wait = Duration::from_secs(if got_any { 180 } else { 600 });
+        let next = match tokio::time::timeout(wait, stream.next()).await {
+            Ok(n) => n,
+            Err(_) => return Err(anyhow!("stalled: {} sent no output for {} seconds", m.runtime, wait.as_secs())),
+        };
+        let Some(chunk) = next else { break };
+        got_any = true;
         pending.extend_from_slice(&chunk.map_err(|e| anyhow!("stream broke: {e}"))?);
         // Only decode complete UTF-8 prefixes so multi-byte chars split across chunks survive.
         let valid = match std::str::from_utf8(&pending) {

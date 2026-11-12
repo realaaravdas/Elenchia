@@ -81,7 +81,7 @@ export class Floor {
     if (!this.live || this.calm) return;
     const now = performance.now(), d = ev.data ?? {}, k = ev.kind;
     if (k === 'turn_start') {
-      this.bubbles.set(d.from, { msgId: d.id, text: '', streaming: true, t: now, stage: d.stage });
+      this.bubbles.set(d.from, { msgId: d.id, text: '', thought: '', streaming: true, t: now, t0: now, last: null, stage: d.stage });
       if (d.to && d.to !== 'human') this.fx.push({ type: 'msg', a: d.from, b: d.to, t0: now, dur: 1100 });
     } else if (k === 'message') {
       this.bubbles.set(d.from, { msgId: d.id, text: d.say, streaming: false, t: now });
@@ -428,14 +428,16 @@ export class Floor {
     } else if (b.streaming && secs != null) head = `${head} · ${secs}s`;
     if (b.streaming && b.t0 != null) {
       const quiet = (now - (b.last ?? b.t0)) / 1000;
-      if (quiet > 15) hint = b.last ? 'No new words for a while. It may be a long reasoning pass.' : 'Still no reply. A cold model can take a minute to load.';
+      if (secs != null && secs >= 90) hint = `Taking longer than usual (${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s). Large models and long code can take a few minutes; it is still working.`;
+      else if (quiet > 15) hint = b.last ? 'No new words for a while. It may be a long reasoning pass.' : 'Still no reply. A cold model can take a minute to load.';
     }
     ctx.font = `600 9px ${c.mono}`; const headW = ctx.measureText(head).width + 20;
     ctx.font = `${italic ? 'italic ' : ''}12px ${c.sans}`;
     let lines = wrap(ctx, text, maxW - 20);
     const maxLines = italic ? 4 : 5; let clipped = false;
     if (lines.length > maxLines) { lines = b.streaming ? lines.slice(-maxLines) : lines.slice(0, maxLines); clipped = true; if (!b.streaming) lines[maxLines - 1] = trunc(lines[maxLines - 1] + ' …', 40); }
-    const lh = 16, w = Math.min(maxW + 40, Math.max(headW, ...lines.map((l) => ctx.measureText(l).width + 20))), hgt = lines.length * lh + 26 + (hint ? 18 : 0);
+    ctx.font = `10.5px ${c.sans}`; const hintLines = hint ? wrap(ctx, hint, 210).slice(0, 3) : []; ctx.font = `${italic ? 'italic ' : ''}12px ${c.sans}`;
+    const lh = 16, w = Math.min(maxW + 40, Math.max(headW, hint ? 230 : 0, ...lines.map((l) => ctx.measureText(l).width + 20))), hgt = lines.length * lh + 26 + (hintLines.length ? hintLines.length * 13 + 8 : 0);
     const above = p.y > hgt + 70;
     let x = clampN2(p.x - w / 2, 8, this.W - w - 8);
     const y = above ? p.y - R - 16 - hgt : p.y + R + 44;
@@ -454,7 +456,7 @@ export class Floor {
     ctx.globalAlpha = alpha;
     ctx.fillStyle = italic ? c.dim : c.fg; ctx.font = `${italic ? 'italic ' : ''}12px ${c.sans}`;
     lines.forEach((l, i) => ctx.fillText(l, x + 10, y + 30 + i * lh));
-    if (hint) { ctx.fillStyle = c.mute; ctx.font = `10.5px ${c.sans}`; ctx.fillText(trunc(hint, 44), x + 10, y + hgt - 8); }
+    if (hintLines.length) { ctx.fillStyle = c.mute; ctx.font = `10.5px ${c.sans}`; hintLines.forEach((l, i) => ctx.fillText(l, x + 10, y + hgt - 8 - (hintLines.length - 1 - i) * 13)); }
     ctx.restore();
     this.hit.push({ type: 'bubble', id: b.msgId, agent: a.id, r: { x, y, w, h: hgt } });
   }

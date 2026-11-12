@@ -260,6 +260,49 @@ impl Run {
         Urls::load(|k| self.st.store.setting(k))
     }
 
+    /// A model went silent while other requests shared the GPU: from now on, run
+    /// model calls one at a time instead of slowing everything down further.
+    fn serialize_models(&mut self) {
+        let n = self.parallel.saturating_sub(1) as u32;
+        if n == 0 {
+            return;
+        }
+        if let Ok(p) = self.llm.clone().try_acquire_many_owned(n) {
+            p.forget();
+            self.parallel = 1;
+            self.emit("note", json!({"text": "A model stopped responding while work ran in parallel, so model calls now run one at a time for the rest of this run."}));
+        }
+    }
+
+    /// Budgets (turns, time) are limits, not verdicts: when one is reached the run
+    /// pauses and asks whether to extend it, instead of ending.
+    async fn ensure_budget(&mut self) -> R<()> {
+        loop {
+            match self.check_budget() {
+                Ok(()) => return Ok(()),
+                Err(Stop::Budget(why)) => self.budget_gate(&why).await?,
+                Err(other) => return Err(other),
+            }
+        }
+    }
+
+    async fn budget_gate(&mut self, why: &str) -> R<()> {
+        let detail = json!({"reason": why, "turns": self.turns(), "max_turns": self.max_turns,
+            "minutes_over": Instant::now().saturating_duration_since(self.deadline).as_secs() / 60,
+            "time_hit": Instant::now() >= self.deadline});
+        let d = self.gate("budget", "Budget reached: extend it?", detail).await?;
+        if d.decision != "extend" {
+            return Err(Stop::Budget(why.to_string()));
+        }
+        let e = d.edits.unwrap_or(Value::Null);
+        let minutes = e["minutes"].as_u64().unwrap_or(15).clamp(1, 720);
+        let turns = e["turns"].as_u64().unwrap_or(20).clamp(0, 500) as u32;
+        self.deadline = Instant::now() + Duration::from_secs(minutes * 60);
+        self.max_turns += turns;
+        self.emit("note", json!({"text": format!("Budget extended by you: {minutes} more minutes and {turns} more turns.")}));
+        Ok(())
+    }
+
     fn check_budget(&self) -> R<()> {
         if self.halted.load(Ordering::SeqCst) {
             return Err(Stop::Halted("halted by you".into()));
@@ -681,7 +724,7 @@ impl Run {
     // ---------- one agent turn ----------
 
     async fn turn(&mut self, kind: &str, stage: &str, to: &str, instruction: String, demo_ctx: Value) -> R<Value> {
-        self.check_budget()?;
+        self.ensure_budget().await?;
         let mut agent: Agent = self
             .lab
             .agent_of(kind)
@@ -733,6 +776,9 @@ impl Run {
                     }
                     Err(Stop::Error(e)) => {
                         let (code, why, transient) = diagnose(&e);
+                        if code == "stalled" {
+                            self.serialize_models();
+                        }
                         if transient && net_tries < 3 {
                             net_tries += 1;
                             let wait = [2u64, 6, 15][net_tries as usize - 1];
@@ -745,6 +791,11 @@ impl Run {
                         self.apply_recovery(&mut agent, &edits);
                         net_tries = 0;
                         attempts = 0;
+                        continue;
+                    }
+                    Err(Stop::Budget(w)) => {
+                        drop(_permit); // let other work proceed while you decide
+                        self.budget_gate(&w).await?;
                         continue;
                     }
                     Err(other) => return Err(other),
@@ -870,7 +921,7 @@ impl Run {
 
 
     async fn model_stream(&self, msg_id: &str, agent: &Agent, msgs: &[ChatMsg]) -> R<String> {
-        let remaining = self.deadline.saturating_duration_since(Instant::now()).min(Duration::from_secs(420));
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
         let (halted, app, run_id, mid, from) =
             (self.halted.clone(), self.st.app.clone(), self.id.clone(), msg_id.to_string(), agent.id.clone());
         let urls = self.urls();
@@ -893,7 +944,7 @@ impl Run {
                     Err(Stop::Error(format!("{}: {e}", agent.name)))
                 }
             }
-            Err(_) => Err(Stop::Budget(format!("{} did not answer within the time budget", agent.name))),
+            Err(_) => Err(Stop::Budget(format!("the time budget ran out while {} was still working", agent.name))),
         }
     }
 
@@ -1456,7 +1507,7 @@ impl Run {
         }
 
         // run
-        self.check_budget()?;
+        self.ensure_budget().await?;
         self.emit("experiment_state", json!({"id": eid, "state": "running"}));
         let seed = (uuid::Uuid::new_v4().as_u128() as u64) & 0xFFFF_FFFF;
         let dir = self.st.data_dir.join("runs").join(&self.id).join(&eid);
@@ -1683,6 +1734,8 @@ fn diagnose(err: &str) -> (&'static str, String, bool) {
         ("rate_limit", "The provider is rate limiting this key. Waiting before retrying.".into(), true)
     } else if has(&["500", "502", "503", "504", "overloaded", "stream broke", "timed out", "timeout"]) {
         ("server", "The model server hiccuped (overloaded, restarting or the connection dropped).".into(), true)
+    } else if has(&["stalled", "sent no output"]) {
+        ("stalled", "The model went silent (no new words for several minutes). It may be overloaded, which happens when two requests share one GPU, or stuck. Retrying. If it keeps happening, turn Parallel work off in Settings or use a smaller or faster model.".into(), true)
     } else if has(&["no answer", "spent its whole", "empty reply"]) {
         ("no_answer", "The model produced no answer. Usually a thinking model that used its whole token budget reasoning: turn thinking off for it in LM Studio, raise max tokens, or pick another model.".into(), false)
     } else if has(&["401", "403", "api key"]) {
@@ -1969,6 +2022,8 @@ mod tests {
         assert_eq!(diagnose("Critic: cannot reach lmstudio at http://127.0.0.1:1234").0, "unreachable");
         assert!(diagnose("lmstudio returned 503").2);
         assert_eq!(diagnose("openai returned 401 Unauthorized").0, "auth");
+        assert_eq!(diagnose("Experimentalist: stalled: lmstudio sent no output for 180 seconds").0, "stalled");
+        assert!(diagnose("stalled: lmstudio sent no output for 600 seconds").2);
         assert_eq!(diagnose_output("{\"say\":\"x\",\"summary\":\"cut", "m").0, "truncated");
         assert_eq!(diagnose_output("I think it works.", "m").0, "no_json");
         assert_eq!(strip_think_len("<think>a</think>b"), 1);
