@@ -303,3 +303,28 @@ input[type="checkbox"]:checked::after {
 /* Keep the box beside the first line when the label wraps */
 label.row:has(> input[type="checkbox"]) { align-items: flex-start; cursor: pointer; }
 label.row:has(> input[type="checkbox"]) > input { margin-top: 1px; }
+
+/* "Who is searching" chip over the diagram */
+.toolchip { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 10px;
+  max-width: min(560px, 92%); padding: 8px 14px; border: 1px solid var(--fg); border-radius: 99px; background: var(--bg); color: var(--fg); font-size: 12.5px; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+.toolchip[hidden] { display: none; }
+.toolchip > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.toolchip .spin { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--fg); animation: toolspin .8s linear infinite; }
+@keyframes toolspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .toolchip .spin { animation-duration: 2.4s; } }
+
+/* Run status: the only coloured element in the app */
+:root { --st-run: #34d399; --st-wait: #fbbf24; --st-search: #60a5fa; --st-retry: #fb923c; --st-err: #f87171; --st-done: #34d399; --st-halt: #a3a3a3; --st-idle: #737373; }
+:root[data-theme="light"] { --st-run: #059669; --st-wait: #b45309; --st-search: #2563eb; --st-retry: #c2410c; --st-err: #dc2626; --st-done: #059669; --st-halt: #6b7280; --st-idle: #9ca3af; }
+.status { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--c); color: var(--fg); white-space: nowrap; min-width: 0; font-size: 12px;
+  background: color-mix(in srgb, var(--c) 12%, transparent); --c: var(--st-idle); }
+.status b { font-weight: 600; letter-spacing: .02em; }
+.status .sd { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.status.st-run { --c: var(--st-run); } .status.st-wait { --c: var(--st-wait); } .status.st-search { --c: var(--st-search); }
+.status.st-retry { --c: var(--st-retry); } .status.st-err { --c: var(--st-err); } .status.st-done { --c: var(--st-done); } .status.st-halt { --c: var(--st-halt); }
+.status.live .dot { animation: stpulse 1.2s ease-in-out infinite; box-shadow: 0 0 0 0 var(--c); }
+@keyframes stpulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 70%, transparent); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.status.st-wait .dot { animation: stblink 1s steps(2, start) infinite; }
+@keyframes stblink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .status.live .dot, .status.st-wait .dot { animation: none; } }

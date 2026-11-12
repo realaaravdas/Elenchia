@@ -183,7 +183,7 @@ fn remove_source(st: S<'_>, id: String) {
 #[tauri::command]
 async fn search_literature(st: S<'_>, query: String) -> Result<Value, String> {
     let key = st.store.setting("openalex_key");
-    let papers = scholar::search(&st.http, &query, key.as_deref()).await.map_err(|e| e.to_string())?;
+    let (papers, _notes) = scholar::search(&st.http, &query, key.as_deref()).await.map_err(|e| e.to_string())?;
     Ok(json!(papers))
 }
 

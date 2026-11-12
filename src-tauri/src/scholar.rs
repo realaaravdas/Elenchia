@@ -103,24 +103,49 @@ async fn semantic(http: &reqwest::Client, q: &str) -> Result<Vec<Value>> {
 }
 
 /// Search for papers. Returns records, best match first (the caller numbers them).
-pub async fn search(http: &reqwest::Client, query: &str, openalex_key: Option<&str>) -> Result<Vec<Value>> {
+pub async fn search(http: &reqwest::Client, query: &str, openalex_key: Option<&str>) -> Result<(Vec<Value>, Vec<String>)> {
     let q = query.trim();
     if q.is_empty() {
         return Err(anyhow!("empty query"));
     }
-    let first = openalex(http, q, openalex_key).await;
+    let mut notes: Vec<String> = vec![];
+    // OpenAlex works without a key but shares a small free daily budget; with a key
+    // that is rejected, retry once without it before giving up on OpenAlex.
+    let mut first = openalex(http, q, openalex_key).await;
+    if let (Err(e), Some(k)) = (&first, openalex_key.map(str::trim).filter(|k| !k.is_empty())) {
+        let m = e.to_string();
+        if m.contains("401") || m.contains("403") {
+            notes.push("OpenAlex rejected the API key; retried without it".into());
+            let _ = k;
+            first = openalex(http, q, None).await;
+        }
+    }
     let mut papers = match first {
         Ok(p) if !p.is_empty() => p,
         other => {
-            let why = other.err().map(|e| e.to_string());
+            let why = match other {
+                Err(e) => {
+                    let m = e.to_string();
+                    if m.contains("429") || m.contains("403") {
+                        "OpenAlex's free daily limit is used up (add a free key in Settings to raise it)".to_string()
+                    } else {
+                        m
+                    }
+                }
+                Ok(_) => "OpenAlex found nothing".into(),
+            };
             match semantic(http, q).await {
-                Ok(p) => p,
-                Err(e2) => return Err(anyhow!("{}; {e2}", why.unwrap_or_else(|| "openalex found nothing".into()))),
+                Ok(p) if !p.is_empty() => {
+                    notes.push(format!("{why}; used Semantic Scholar"));
+                    p
+                }
+                Ok(_) => return Err(anyhow!("{why}; Semantic Scholar found nothing either")),
+                Err(e2) => return Err(anyhow!("{why}; {e2}")),
             }
         }
     };
     papers.truncate(LIMIT);
-    Ok(papers)
+    Ok((papers, notes))
 }
 
 /// Web search through the user's own SearXNG instance (JSON API). Without one,

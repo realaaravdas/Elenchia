@@ -26,7 +26,16 @@ export function createFloor() {
   const legend = h('div', { class: 'legend' }, 'seed = hypothesis · crack = open objection · vessel = experiment · signal = evidence');
   const banner = h('div', { class: 'banner' });
   const welcome = h('div', { style: { position: 'absolute', inset: 0, display: 'none', placeItems: 'center', pointerEvents: 'none' } });
-  const stage = h('section', { class: 'stage' }, canvas, legend, banner, welcome);
+  const toolchip = h('div', { class: 'toolchip', hidden: true, role: 'status', 'aria-live': 'polite' });
+  const stage = h('section', { class: 'stage' }, canvas, legend, banner, welcome, toolchip);
+  let toolTimer = null;
+  const renderTool = () => {
+    const s = S.toolStatus;
+    if (!s) { toolchip.hidden = true; clearInterval(toolTimer); toolTimer = null; return; }
+    toolchip.hidden = false; clear(toolchip);
+    toolchip.append(h('span', { class: 'spin' }), h('span', {}, s.text), h('span', { class: 'mute' }, ` · ${Math.floor((Date.now() - s.t0) / 1000)}s`));
+    if (!toolTimer) toolTimer = setInterval(renderTool, 1000);
+  };
   const tabs = h('div', { class: 'tabs', role: 'tablist' });
   const body = h('div', { class: 'body' });
   const feed = h('section', { class: 'feed' }, tabs, body);
@@ -164,6 +173,7 @@ export function createFloor() {
     delta: (msgId, from, raw, thought) => floor.delta(msgId, from, raw, thought),
     retry: (msgId, from, text) => floor.retry(msgId, from, text),
     browser: () => update(),
+    tool: (status, from) => { floor.tool(status, from); renderTool(); },
     destroy: () => floor.destroy(),
     floor,
   };

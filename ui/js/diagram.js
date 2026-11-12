@@ -115,7 +115,20 @@ export class Floor {
     const now = performance.now();
     let b = this.bubbles.get(from);
     if (!b || b.msgId !== msgId) { b = { msgId, text: '', thought: '', streaming: true, t: now, t0: now, last: null }; this.bubbles.set(from, b); }
-    b.text = ''; b.thought = ''; b.raw = ''; b.last = null; b.notice = text; b.noticeAt = now; this.dirty = true;
+    b.text = ''; b.thought = ''; b.raw = ''; b.last = null; b.notice = text; b.noticeAt = now; b.noticeSticky = false; b.noticeHead = null; this.dirty = true;
+  }
+
+  /** An agent (or the lab) is running a search/page-open: say so on its bubble. */
+  tool(status, from) {
+    const now = performance.now();
+    if (!status) {
+      const b = from && this.bubbles.get(from);
+      if (b) { b.notice = null; b.noticeSticky = false; }
+      this.dirty = true; return;
+    }
+    const b = this.bubbles.get(status.from);
+    if (b) { b.text = ''; b.thought = ''; b.streaming = true; b.last = null; b.notice = status.text; b.noticeSticky = true; b.noticeHead = 'SEARCHING'; b.noticeAt = now; }
+    this.dirty = true;
   }
 
   // ----- pointer -----
@@ -405,8 +418,8 @@ export class Floor {
       if (b.thought) {
         const tail = b.thought.length > 300 ? '…' + b.thought.slice(-300).replace(/^\S*\s/, '') : b.thought;
         text = tail; italic = true; head = `THINKING${secs != null ? ' · ' + secs + 's' : ''}`;
-      } else if (b.notice && b.noticeAt && now - b.noticeAt < 20000) {
-        text = b.notice; head = `RETRYING${secs != null ? " · " + secs + "s" : ""}`; italic = true;
+      } else if (b.notice && (b.noticeSticky || (b.noticeAt && now - b.noticeAt < 20000))) {
+        text = b.notice; const ns = b.noticeSticky ? Math.floor((now - b.noticeAt) / 1000) : secs; head = `${b.noticeHead || 'RETRYING'}${ns != null ? ' · ' + ns + 's' : ''}`; italic = true;
       } else {
         const dots = '.'.repeat(1 + (Math.floor(now / 380) % 3));
         text = secs != null && secs < 2 ? 'Sending to the model' + dots : 'Waiting for the model' + dots;

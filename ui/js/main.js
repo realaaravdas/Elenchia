@@ -1,7 +1,8 @@
 // Controller: boots the app, owns the active run, routes events from the Rust
 // orchestrator into the derived model, and exposes actions to the views.
 
-import { h, $, clear, pill, toast, icon } from './util.js';
+import { h, $, clear, pill, toast, icon, trunc } from './util.js';
+import { agentName } from './model.js';
 import { call, onEvent, isDesktop } from './api.js';
 import { S, A, recompute, isLive, running, modelsAvailable } from './state.js';
 import { windowControls, installDrag } from './winctl.js';
@@ -33,12 +34,36 @@ function renderRail() {
 r.append(h('div', { class: 'spacer' }),    h('button', { class: 'rail-btn', 'data-tip': 'Past runs and replay', 'aria-label': 'Past runs', onclick: runsDialog }, icon('runs')),    h('button', { class: 'rail-btn', 'data-tip': 'Models, hardware and servers', 'aria-label': 'Runtimes', onclick: settingsDialog }, icon('chip')),    h('button', { class: 'rail-btn', 'data-tip': 'Settings and tour', 'aria-label': 'Settings', onclick: () => appSettingsDialog({ replayTour: () => startTour(newRunDialog) }) }, icon('gear')),    h('button', { class: 'rail-btn', 'data-tip': S.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', 'aria-label': 'Toggle theme', onclick: () => A.toggleTheme() }, icon(S.theme === 'dark' ? 'sun' : 'moon')));
 }
 
+/** The one colour-coded element in the app: what the lab is doing right now. */
+function statusIndicator(M) {
+  let kind = 'idle', label = 'Idle', detail = '';
+  const name = (id) => M?.lab?.agents.find((a) => a.id === id)?.name ?? '';
+  if (!S.runId || !M?.started) { kind = 'idle'; label = S.awaiting ? 'Starting' : 'Idle'; if (S.awaiting) kind = 'run'; }
+  else if (!isLive()) { kind = 'idle'; label = 'Replay'; }
+  else if (M.ended) {
+    const s = M.ended.status;
+    [kind, label] = s === 'completed' ? ['done', 'Completed'] : s === 'error' ? ['err', 'Error'] : s === 'halted' ? ['halt', 'Halted'] : ['halt', 'Stopped'];
+    detail = M.ended.reason && s !== 'completed' ? M.ended.reason : '';
+  } else if (M.openGates.length) {
+    kind = 'wait'; label = 'Waiting on you'; detail = M.openGates[0].title || '';
+  } else if (S.toolStatus) {
+    kind = 'search'; label = 'Searching'; detail = S.toolStatus.who || '';
+  } else if (S.retryUntil && Date.now() < S.retryUntil) {
+    kind = 'retry'; label = 'Retrying'; detail = S.retryWho || '';
+  } else {
+    const active = Object.entries(M.agents || {}).find(([, st]) => st.status === 'thinking' || st.status === 'arguing');
+    kind = 'run'; label = 'Running'; detail = active ? `${name(active[0])} ${active[1].status === 'arguing' ? 'is arguing' : 'is thinking'}` : (M.phase || '');
+  }
+  const live = ['run', 'search', 'retry'].includes(kind);
+  return h('div', { class: `status st-${kind}${live ? ' live' : ''}`, role: 'status', title: detail ? `${label}: ${detail}` : label },
+    h('span', { class: 'dot' }), h('b', {}, label), detail ? h('span', { class: 'sd' }, trunc(detail, 34)) : null);
+}
+
 function renderTop() {
   const t = $('#topbar'), M = S.M; clear(t);
   const meta = S.runs.find((r) => r.id === S.runId);
   const q = M?.framed?.question ?? M?.started?.question ?? meta?.question;
   t.append(...[h("div", { class: "title" }, q ? q : "Elenchia"),
-    M?.started ? pill(M.ended ? M.ended.status : M.openGates.length ? 'waiting on you' : 'running', M.ended ? 'solid' : 'solid dot pulse') : null,
     M?.started && !M.ended && M.phase ? pill(M.phase + (M.round ? ` · round ${M.round}` : ''), 'dashed') : null,
     M?.started ? pill(`turn ${M.turns} / ${M.framed?.max_turns ?? M.started.max_turns}`, 'dashed') : null,
     !isLive() ? pill('replay', 'solid') : null,
@@ -46,6 +71,7 @@ function renderTop() {
   const d = S.detection;
   const n = modelsAvailable().length;
   t.append(...[
+    statusIndicator(S.M),
     S.preview ? pill('browser preview', 'dashed') : null,
     h('button', { class: 'pill', style: { cursor: 'pointer', background: 'none' }, title: 'Runtimes & hardware', onclick: settingsDialog }, n ? `${n} model${n > 1 ? 's' : ''}` : 'no local models · demo lab'),
     running() ? h('button', { class: 'btn sm', onclick: () => A.halt() }, 'Halt run') : null,
@@ -69,6 +95,12 @@ function refresh(ev, o) { renderRail(); renderTop(); view?.update(ev, o); }
 function handleEvent(p) {
   if (!p.persisted) {
     if (p.run_id !== S.runId && !S.awaiting) return;
+    if (p.kind === 'tool_status') {
+      S.toolStatus = p.data.state === 'start' ? { ...p.data, t0: Date.now() } : null;
+      renderTop();
+      if (S.view === 'floor') view?.tool?.(S.toolStatus, p.data.from);
+      return;
+    }
     if (p.kind === 'browser_view') {
       S.browserView = p.data.closed ? { ...(S.browserView || {}), closed: true } : p.data;
       if (!p.data.closed && !S.browserShown) { S.browserShown = true; S.feedTab = 'browser'; }
@@ -77,6 +109,8 @@ function handleEvent(p) {
     }
     if (p.kind === 'message_retry') {
       S.live.delete(p.data.id); S.thought.delete(p.data.id);
+      S.retryUntil = Date.now() + 9000; S.retryWho = agentName(S.M, p.data.from);
+      renderTop(); setTimeout(renderTop, 9100);
       if (S.view === 'floor') view?.retry?.(p.data.id, p.data.from, p.data.reason);
       return;
     }
@@ -90,7 +124,7 @@ function handleEvent(p) {
   }
   const ev = p.event;
   if (ev.run_id !== S.runId) {
-    if (S.awaiting && ev.kind === 'run_started') { S.runId = ev.run_id; S.events = []; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; }
+    if (S.awaiting && ev.kind === 'run_started') { S.runId = ev.run_id; S.events = []; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.toolStatus = null; }
     else { if (ev.kind === 'run_ended') loadRuns(); return; }
   }
   S.events.push(ev);
@@ -112,7 +146,7 @@ Object.assign(A, {
     mountView(opts); renderTop();
   },
   async startRun(params) {
-    S.awaiting = true; S.events = []; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.focus = null; stopPlay();
+    S.awaiting = true; S.events = []; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.toolStatus = null; S.focus = null; stopPlay();
     try {
       const id = await call('start_run', { lab: S.lab, params });
       S.runId = id; await loadRuns();
@@ -121,7 +155,7 @@ Object.assign(A, {
   },
   async loadRun(id) {
     stopPlay();
-    S.events = await call('run_events', { runId: id }); S.runId = id; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false;
+    S.events = await call('run_events', { runId: id }); S.runId = id; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.toolStatus = null;
     recompute(); A.go('floor');
   },
   async resolve(gateId, decision) { await call('resolve_gate', { gateId, decision }); },
