@@ -120,3 +120,7 @@ LM Studio stays the default and Elenchia assigns local models first. If you want
 - **Export.** Notebook → *Export…* saves PDF, Word (.docx), Markdown, HTML, plain text, a transcript CSV, the raw event log, or an **Elenchia notebook** (`.elenchia`).
 - **Import.** *Open notebook file…* (Notebook or Runs) shows an exported `.elenchia` file in the lab notebook, read-only, with its full replayable history. It is not re-verified against the audit chain on the machine that opens it.
 - **Built-in browser, automatic recovery, search fallbacks, status badge and sliding navigation** as described above.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
