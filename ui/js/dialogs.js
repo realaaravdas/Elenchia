@@ -109,7 +109,7 @@ export function expDrawer(id) {
 
 // ---------- New run ----------
 export function newRunDialog() {
-  const q = h('textarea', { rows: 4, placeholder: 'e.g. Does this regularizer actually help, or is it tuning noise?' });
+  const q = h('textarea', { rows: 4, placeholder: 'e.g. What effect does daily use of Twitter have on the attention span of 12- to 16-year-olds?' });
   const cons = h('textarea', { rows: 2, placeholder: 'One per line. e.g. Use only simulated data.' });
   const turns = h('input', { type: 'number', value: 60, min: 4, max: 500 });
   const mins = h('input', { type: 'number', value: 45, min: 1, max: 720 });
@@ -140,12 +140,12 @@ export function newRunDialog() {
   const demo = S.lab.agents.every((a) => !a.enabled || a.model.runtime === 'demo');
   const haveModels = modelsAvailable().length > 0;
   const cloud = S.lab.agents.some((a) => a.enabled && a.model.runtime === 'openai');
-  const examples = ['Does this regularizer actually help, or is it tuning noise?', 'Which of these three mechanisms best explains the pattern in my dataset?', 'Is this pricing experiment powered well enough to run?'];
+  const examples = ['How do first-generation college students describe their transition to higher education?', 'What are the lived experiences of refugees adapting to a new culture?', 'How do rural community members perceive changes in local healthcare services?', 'What effect does daily use of Twitter have on the attention span of 12- to 16-year-olds?'];
   openModal(h('div', {},
     h('h2', {}, 'Start a research run'), h('div', { class: 'sub' }, 'You hold the gates: nothing consequential happens without your decision.'),
     cloud ? h('div', { class: 'card pad blocked', style: { marginBottom: '16px' } }, h('b', {}, 'Cloud model in use.'), h('div', { class: 'dim' }, 'Agents set to the OpenAI-compatible API send their prompts to that provider, including your question, attached material and experiment results. Use LM Studio for everything to keep it on this machine.')) : null,
     demo ? h('div', { class: 'card pad', style: { marginBottom: '16px' } }, h('b', {}, 'This lab is using the scripted demo.'), h('div', { class: 'dim' }, haveModels ? 'Local models are available. Assign them in the Lab designer to run on real models.' : 'No Ollama or LM Studio server was detected, so agents follow a script. The experiment itself is still really executed.'), haveModels ? h('div', { style: { marginTop: '8px' } }, h('button', { class: 'btn sm', onclick: () => { closeModal(); A.go('designer'); } }, 'Open Lab designer')) : null) : null,
-    h('div', { class: 'field' }, h('label', {}, 'Research question'), q, h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } }, examples.map((x) => h('button', { class: 'btn sm ghost', onclick: () => { q.value = x; q.focus(); } }, trunc(x, 46))))),
+    h('div', { class: 'field' }, h('label', {}, 'Research question'), q, h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } }, examples.map((x) => h('button', { class: 'btn sm ghost', style: { whiteSpace: 'normal', height: 'auto', textAlign: 'left', padding: '4px 9px', minWidth: '0', width: 'auto' }, onclick: () => { q.value = x; q.focus(); } }, x)))),
     h('div', { class: 'field' }, h('label', {}, 'Constraints'), cons),
     h('div', { class: 'field' }, h('label', {}, 'Off-limits topics'), off),
     h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'Turn budget'), turns), h('div', { class: 'field' }, h('label', {}, 'Time budget (minutes)'), mins)),
