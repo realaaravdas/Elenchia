@@ -17,6 +17,7 @@ export const S = {
   live: new Map(), // msgId -> raw streamed text
   thought: new Map(), // msgId -> streamed reasoning text (what the model is thinking)
   browserView: null, // latest frame from the built-in browser {action,url,title,shot}
+  imported: null, // {name, exportedAt, appVersion} while viewing an opened notebook export
   toolStatus: null, // who is searching right now {from, who, text, t0}
   feedTab: 'debate',
   calm: false,

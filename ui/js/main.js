@@ -7,6 +7,7 @@ import { call, onEvent, isDesktop } from './api.js';
 import { S, A, recompute, isLive, running, modelsAvailable } from './state.js';
 import { windowControls, installDrag } from './winctl.js';
 import { startTour, tourSeen } from './tour.js';
+import { importNotebook } from './exports.js';
 import { createFloor } from './floor.js';
 import { createDesigner } from './designer.js';
 import { createBoard, createInbox, createNotebook } from './board.js';
@@ -200,8 +201,10 @@ Object.assign(A, {
     S.view = name; closeDrawer(); renderRail();
     mountView(opts); renderTop();
   },
+  importNotebook,
+  stopAll: () => stopPlay(),
   async startRun(params) {
-    S.awaiting = true; S.events = []; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.toolStatus = null; S.focus = null; stopPlay();
+    S.imported = null; S.awaiting = true; S.events = []; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.toolStatus = null; S.focus = null; stopPlay();
     try {
       const id = await call('start_run', { lab: S.lab, params });
       S.runId = id; await loadRuns();
@@ -210,7 +213,7 @@ Object.assign(A, {
   },
   async loadRun(id) {
     stopPlay();
-    S.events = await call('run_events', { runId: id }); S.runId = id; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.toolStatus = null;
+    S.imported = null; S.events = await call('run_events', { runId: id }); S.runId = id; S.replay = null; S.live.clear(); S.thought.clear(); S.browserView = null; S.browserShown = false; S.toolStatus = null;
     recompute(); A.go('floor');
   },
   async resolve(gateId, decision) { await call('resolve_gate', { gateId, decision }); },

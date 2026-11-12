@@ -168,7 +168,7 @@ export function runsDialog() {
     h('div', { class: 'row' }, h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { style: { fontWeight: 600 } }, trunc(r.question, 90)), h('div', { class: 'mute' }, `${r.lab} · ${ago(r.created)}`)), pill(r.status, r.status === 'running' ? 'solid dot pulse' : r.status === 'completed' ? 'solid' : 'dashed'))));
   openModal(h('div', {}, h('h2', {}, 'Runs'), h('div', { class: 'sub' }, 'Every run is stored locally and can be replayed from its event log.'),
     rows.length ? h('div', { class: 'stack' }, rows) : h('div', { class: 'empty' }, 'No runs yet.'),
-    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'))));
+    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: () => { closeModal(); A.importNotebook(); } }, 'Open notebook file…'), h('button', { class: 'btn', onclick: closeModal }, 'Close'))));
 }
 
 // ---------- Runtimes & settings ----------
@@ -202,6 +202,7 @@ export function appSettingsDialog({ replayTour }) {
   const st = S.settings;
   const lit = h('input', { type: 'checkbox', checked: !!st.literature_enabled });
   const key = h('input', { type: 'password', placeholder: st.openalex_key_set ? 'A key is saved. Type to replace.' : 'Leave empty to use the shared limit' });
+  const par = h('select', {}, [['auto', 'Auto (recommended): only when this machine can handle it'], ['1', 'Off: always one at a time'], ['2', 'Up to 2 at once (skips the hardware check)'], ['3', 'Up to 3 at once (skips the hardware check)']].map(([v, l]) => h('option', { value: v, selected: (st.parallel || 'auto') === v }, l)));
   const bvis = h('input', { type: 'checkbox', checked: !!st.browser_visible });
   const searx = h('input', { type: 'text', value: st.searxng_url || '', placeholder: 'e.g. http://localhost:8080 (needs the json format enabled)' });
   const calm = h('input', { type: 'checkbox', checked: !!S.calm, onchange: () => A.toggleCalm() });
@@ -222,8 +223,11 @@ export function appSettingsDialog({ replayTour }) {
         h('div', { class: 'row', style: { marginTop: '8px' } }, h('b', { style: { flex: 1 } }, 'Built-in browser'), pill(st.browser_path ? 'ready' : 'Edge or Chrome not found', st.browser_path ? 'solid' : 'dashed')),
         h('label', { class: 'row', style: { gap: '8px', marginTop: '6px' } }, bvis, h('span', {}, 'Show the browser window while agents use it (otherwise it runs hidden; you still see it in the Browser tab)')),
         h('div', { class: 'hint' }, 'Agents can open any public page in the built-in browser (a throwaway Edge/Chrome profile with no logins) and search Wikipedia through it. Search engines like Google and DuckDuckGo block automated browsers, so full web search needs your own SearXNG. Keys are stored unencrypted in the local database.')),
+      h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Parallel work'), pill('experimental', 'dashed')),
+        h('div', { class: 'dim', style: { margin: '6px 0 8px' } }, 'While one hypothesis2019s experiment runs, other hypotheses can be designed, reviewed and analysed at the same time. Auto only does this when your GPU has room for the models (or when no local model is involved); a CPU-only machine stays one at a time. Each run logs which it chose and why.'),
+        h('div', { class: 'field' }, par)),
       h('div', { class: 'card pad' }, h('h3', {}, 'Keyboard shortcuts'), kvs(keys))),
     h('div', { class: 'mute', style: { marginTop: '12px' } }, `Data folder: ${st.data_dir}`),
     h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'),
-      h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(st.ollama_url, st.lmstudio_url, { literatureEnabled: lit.checked, openalexKey: key.value, searxngUrl: searx.value, browserVisible: bvis.checked }); closeModal(); toast('Settings saved.'); } }, 'Save'))));
+      h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(st.ollama_url, st.lmstudio_url, { literatureEnabled: lit.checked, openalexKey: key.value, searxngUrl: searx.value, browserVisible: bvis.checked, parallel: par.value }); closeModal(); toast('Settings saved.'); } }, 'Save'))));
 }

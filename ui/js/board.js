@@ -1,9 +1,10 @@
 // Experiment board, approval inbox and lab notebook.
 
 import { h, $, clear, pill, statusPill, gradeMeter, trunc, ago, clock, GATE_LABEL, GATE_ORDER, download, toast } from './util.js';
-import { A, S, isLive } from './state.js';
+import { A, S, isLive, recompute } from './state.js';
 import { agentName, toMarkdown } from './model.js';
 import { gateControls, resolvedLine } from './gates.js';
+import { exportDialog } from './exports.js';
 import { expDrawer, hypDrawer, objThread, messageDialog, openModal, closeModal } from './dialogs.js';
 import { replayBar } from './floor.js';
 
@@ -112,16 +113,17 @@ export function createNotebook(opts = {}) {
     const M = S.M;
     const st = root.scrollTop; clear(page);
     if (!S.runId || !M.started) {
-      page.append(h('div', { class: 'empty', style: { maxWidth: '560px', margin: '60px auto' } }, h('b', {}, 'The notebook is empty.'), h('div', { style: { marginTop: '6px' } }, 'Hypotheses with their status, evidence links, decisions and an exportable report build up here as a run proceeds.')));
+      page.append(h('div', { class: 'empty', style: { maxWidth: '560px', margin: '60px auto' } }, h('b', {}, 'The notebook is empty.'), h('div', { style: { marginTop: '6px' } }, 'Hypotheses with their status, evidence links, decisions and an exportable report build up here as a run proceeds.'), h('div', { style: { marginTop: '14px' } }, h('button', { class: 'btn', onclick: () => A.importNotebook() }, 'Open a notebook file…'))));
       return;
     }
     const q = M.framed?.question ?? M.started.question;
     const toc = [['question', 'Question'], ['findings', 'Findings'], ...((M.sources?.length || M.searches?.length) ? [['sources', 'Sources']] : []), ['hypotheses', 'Hypotheses'], ['experiments', 'Experiments'], ['decisions', 'Decisions'], ['audit', 'Audit log']];
     const left = h('nav', { class: 'nb-toc' }, toc.map(([id, t]) => h('a', { onclick: () => $('#nb-' + id, page)?.scrollIntoView({ behavior: 'smooth' }) }, t)),
       h('hr', { class: 'hr' }),
-      h('button', { class: 'btn sm', onclick: () => download(`elenchia-notebook-${S.runId.slice(0, 8)}.md`, toMarkdown(M, S.runs.find((r) => r.id === S.runId))) }, 'Export Markdown'));
+      h('div', { class: 'stack' }, h('button', { class: 'btn sm', onclick: exportDialog }, 'Export…'), h('button', { class: 'btn sm', onclick: () => A.importNotebook() }, 'Open notebook file…')));
 
     const main = h('div', {},
+      S.imported ? h('div', { class: 'card pad', style: { marginBottom: '14px' } }, h('div', { class: 'row' }, pill('imported · view only', 'solid'), h('b', { style: { flex: 1, minWidth: 0 } }, S.imported.name), h('button', { class: 'btn sm', onclick: () => { S.imported = null; A.go('floor'); S.runId = null; S.events = []; S.replay = null; recompute(); A.go('notebook'); } }, 'Close')), h('div', { class: 'mute', style: { marginTop: '4px' } }, `Exported ${S.imported.exportedAt ? new Date(S.imported.exportedAt).toLocaleString() : ''}${S.imported.appVersion ? ' by Elenchia ' + S.imported.appVersion : ''}. Shown from the saved event log; it was not re-verified on this machine.`)) : null,
       sec('question', 'Question',
         h('p', { style: { fontSize: '16px', margin: '0 0 10px' } }, q),
         M.framed && M.started.question !== q ? h('div', { class: 'mute' }, 'Originally asked: ' + M.started.question) : null,
@@ -158,7 +160,7 @@ export function createNotebook(opts = {}) {
         h('tbody', {}, M.decisions.map((d) => h('tr', {}, h('td', { class: 'mono mute' }, clock(d.ts)), h('td', {}, GATE_LABEL[d.kind] || d.kind), h('td', { style: { fontWeight: 600 } }, d.decision), h('td', {}, d.by === 'auto' ? 'auto' : 'you'), h('td', { class: 'dim' }, d.note || ''))))) : h('div', { class: 'mute' }, 'No decisions yet.')),
       sec('audit', 'Audit log',
         h('p', { class: 'dim', style: { marginTop: 0 } }, 'Append-only and hash-chained. Each entry commits to the one before it, so a result can be traced to who decided what, and tampering is detectable.'),
-        h('div', { class: 'row', style: { marginBottom: '10px' } }, h('button', { class: 'btn sm', onclick: verify }, 'Verify chain'), audit ? pill(audit.broken_at ? `broken at #${audit.broken_at}` : `intact · ${audit.events} events`, audit.broken_at ? 'strike' : 'solid') : null),
+        h('div', { class: 'row', style: { marginBottom: '10px' } }, S.imported ? null : h('button', { class: 'btn sm', onclick: verify }, 'Verify chain'), audit ? pill(audit.broken_at ? `broken at #${audit.broken_at}` : `intact · ${audit.events} events`, audit.broken_at ? 'strike' : 'solid') : null),
         h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, ['#', 'Time', 'Event', 'Hash'].map((t) => h('th', {}, t)))),
           h('tbody', {}, S.events.slice(0, S.replay ?? S.events.length).map((e) => h('tr', {}, h('td', { class: 'mono mute' }, e.seq), h('td', { class: 'mono mute' }, clock(e.ts)), h('td', { class: 'mono' }, e.kind), h('td', { class: 'mono mute' }, (e.hash || '').slice(0, 10))))))));
 

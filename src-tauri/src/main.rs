@@ -95,6 +95,7 @@ fn get_settings(st: S<'_>) -> Value {
            "openai_url": u.openai, "openai_key_set": !u.openai_key.is_empty(),
            "browser_path": browser::find_browser().map(|p| p.display().to_string()),
            "browser_visible": st.store.setting("browser_visible").as_deref() == Some("1"),
+           "parallel": st.store.setting("parallel").unwrap_or_else(|| "auto".into()),
            "searxng_url": st.store.setting("searxng_url").unwrap_or_default()})
 }
 
@@ -109,7 +110,12 @@ fn set_settings(
     openai_key: Option<String>,
     searxng_url: Option<String>,
     browser_visible: Option<bool>,
+    parallel: Option<String>,
 ) -> Result<(), String> {
+    if let Some(p) = parallel {
+        let p = if matches!(p.as_str(), "1" | "2" | "3") { p } else { "auto".to_string() };
+        st.store.set_setting("parallel", &p).map_err(|e| e.to_string())?;
+    }
     st.store.set_setting("ollama_url", ollama_url.trim()).map_err(|e| e.to_string())?;
     st.store.set_setting("lmstudio_url", lmstudio_url.trim()).map_err(|e| e.to_string())?;
     if let Some(on) = literature_enabled {
@@ -179,6 +185,41 @@ fn remove_source(st: S<'_>, id: String) {
     st.sources.lock().unwrap().remove(&id);
 }
 
+/// Save an export through the native "Save as" dialog. `data_b64` is the file's bytes.
+/// Returns the saved path, or null if the user cancelled.
+#[tauri::command]
+async fn save_export(name: String, data_b64: String) -> Result<Option<String>, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data_b64.trim()).map_err(|e| format!("bad data: {e}"))?;
+    let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+    let mut dlg = rfd::AsyncFileDialog::new().set_title("Save export").set_file_name(&name);
+    if !ext.is_empty() {
+        dlg = dlg.add_filter(ext.to_uppercase(), &[ext.as_str()]);
+    }
+    let Some(file) = dlg.save_file().await else { return Ok(None) };
+    tokio::fs::write(file.path(), bytes).await.map_err(|e| format!("could not save: {e}"))?;
+    Ok(Some(file.path().display().to_string()))
+}
+
+/// Choose a saved notebook (.elenchia or .json) and return its text for viewing.
+#[tauri::command]
+async fn open_import() -> Result<Option<Value>, String> {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_title("Open a notebook export")
+        .add_filter("Elenchia notebook", &["elenchia", "json"])
+        .pick_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let meta = tokio::fs::metadata(file.path()).await.map_err(|e| e.to_string())?;
+    if meta.len() > 200 * 1024 * 1024 {
+        return Err("that file is larger than 200 MB".into());
+    }
+    let text = tokio::fs::read_to_string(file.path()).await.map_err(|e| format!("could not read the file: {e}"))?;
+    Ok(Some(json!({"name": file.file_name(), "text": text})))
+}
+
 /// Manual literature lookup from the UI (the user asked for it explicitly).
 #[tauri::command]
 async fn search_literature(st: S<'_>, query: String) -> Result<Value, String> {
@@ -216,7 +257,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             detect, default_lab, list_labs, save_lab, delete_lab, start_run, resolve_gate, halt_run,
             list_runs, run_events, verify_audit, get_settings, set_settings,
-            pick_sources, add_source_url, remove_source, search_literature
+            pick_sources, add_source_url, remove_source, search_literature, save_export, open_import
         ])
         .run(tauri::generate_context!())
         .expect("error while running Elenchia");
