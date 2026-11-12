@@ -287,3 +287,19 @@ table.tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-
 .split:hover::after, .split.drag::after { background: var(--fg); width: 2px; left: 3px; }
 .split.lanes-split { left: var(--lanes-w, 250px); }
 .split.feed-split { left: auto; right: var(--feed-w, 390px); margin-left: 0; margin-right: -4px; }
+
+/* Checkboxes: large, on-brand, easy to hit */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none; width: 20px; height: 20px; margin: 0; cursor: pointer;
+  border: 1.5px solid var(--fg-mute); border-radius: 6px; background: transparent; display: inline-grid; place-content: center;
+  transition: background .12s, border-color .12s;
+}
+input[type="checkbox"]:hover { border-color: var(--fg); }
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+input[type="checkbox"]:checked { background: var(--fg); border-color: var(--fg); }
+input[type="checkbox"]:checked::after {
+  content: ""; width: 5px; height: 10px; margin-top: -2px; border: solid var(--bg); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+/* Keep the box beside the first line when the label wraps */
+label.row:has(> input[type="checkbox"]) { align-items: flex-start; cursor: pointer; }
+label.row:has(> input[type="checkbox"]) > input { margin-top: 1px; }
