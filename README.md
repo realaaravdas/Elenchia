@@ -23,6 +23,14 @@ Optional, for experiments on real code: install **Python 3.9+** (and numpy/scipy
 
 With no runtime installed, the app uses a clearly labelled **scripted demo lab** so you can see the whole product. The demo agents are a script, not models; the experiment they propose is still genuinely executed (Python if present, otherwise a built-in kernel, labelled as such).
 
+### Using LM Studio
+
+1. In LM Studio, download an instruction-tuned model (7B+ works best; the agents must emit JSON).
+2. Open the **Developer** tab, load the model, and switch **Start Server** on (default `http://127.0.0.1:1234`). Enabling *Just-In-Time model loading* lets Elenchia use any downloaded model without loading it by hand.
+3. Launch Elenchia. The top bar shows LM Studio as up and every agent's model picker lists its models. Pick one per agent (or the same one for all; turns run one at a time anyway).
+
+Compatibility notes: Elenchia talks to the OpenAI-compatible `/v1/chat/completions` stream and lists models via `/api/v0/models` (falling back to `/v1/models`). `<think>` blocks and `reasoning_content` from thinking models are ignored, and if a model's chat template rejects the system role the request is retried with the system text folded into the first user message. If your server runs on another port, change it under *Runtimes*.
+
 Installers: `cargo install tauri-cli --version "^2"` then `cargo tauri build` (run from `src-tauri/`).
 
 Browser preview (no desktop shell): `powershell -ExecutionPolicy Bypass -File tools/serve.ps1`, then open http://127.0.0.1:8123. It replays a run recorded from the real Rust orchestrator and says so on screen.
@@ -70,4 +78,4 @@ The orchestrator emits events over Tauri's event bus; the UI derives everything 
 - **Turns run one at a time** (one model loaded at a time, as designed), so the living diagram shows one conversation at a time rather than several in parallel.
 - **Custom roles** are stored and drawn but only the six built-in roles are scheduled. The librarian, per-gate replay of alternative branches, mixed-model disagreement metrics and reproducibility reruns are v0.2/v0.3 per the concept.
 - **Refusal rules are narrow.** A short built-in list halts clearly harmful framings before any model is called; everything subtler relies on agent flags and your ethics gate.
-- Tested against the scripted lab end to end, and against a mock Ollama server for streaming, schema validation, retry and error handling. Not yet tested against real Ollama or LM Studio models, and not against Python (none was installed on the dev machine; the sandbox code path for Python is untested).
+- Tested against the scripted lab end to end, and against a mock Ollama server for streaming, schema validation, retry and error handling. Not yet tested against a real LM Studio or Ollama server (the LM Studio paths follow its documented API), and not against Python (none was installed on the dev machine; the sandbox code path for Python is untested).

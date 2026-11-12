@@ -141,8 +141,29 @@ fn strs(v: &Value) -> Vec<String> {
     v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default()
 }
 
+/// Reasoning models (common in LM Studio) may inline `<think>…</think>` in the
+/// reply. Drop it, including an unterminated block, before looking for JSON.
+fn strip_think(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(s) = rest.find("<think>") {
+        out.push_str(&rest[..s]);
+        match rest[s..].find("</think>") {
+            Some(e) => rest = &rest[s + e + "</think>".len()..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    // A lone closing tag means the opening one was consumed by the chat template.
+    match out.rfind("</think>") {
+        Some(i) => out[i + "</think>".len()..].to_string(),
+        None => out,
+    }
+}
+
 fn parse_json(text: &str) -> std::result::Result<Value, String> {
-    let t = text.trim();
+    let cleaned = strip_think(text);
+    let t = cleaned.trim();
     let (s, e) = (t.find('{'), t.rfind('}'));
     match (s, e) {
         (Some(s), Some(e)) if e > s => serde_json::from_str::<Value>(&t[s..=e]).map_err(|e| format!("not valid JSON ({e})")),

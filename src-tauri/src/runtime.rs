@@ -71,6 +71,26 @@ pub async fn detect(http: &reqwest::Client, urls: &Urls) -> Value {
         Some(models)
     };
     let lmstudio = async {
+        // Native listing (LM Studio 0.3.6+) knows type and loaded state; the
+        // OpenAI-compatible one works everywhere. Try native, fall back.
+        if let Ok(r) = http.get(format!("{}/api/v0/models", trim(&urls.lmstudio))).timeout(probe_timeout).send().await {
+            if let Ok(v) = r.json::<Value>().await {
+                if let Some(arr) = v["data"].as_array() {
+                    let models: Vec<Value> = arr
+                        .iter()
+                        .filter(|m| {
+                            let t = m["type"].as_str().unwrap_or("llm");
+                            t != "embeddings" && !m["id"].as_str().unwrap_or("").contains("embed")
+                        })
+                        .map(|m| {
+                            json!({"id": m["id"], "size": Value::Null, "family": m["arch"],
+                                   "quant": m["quantization"], "loaded": m["state"] == "loaded"})
+                        })
+                        .collect();
+                    return Some(models);
+                }
+            }
+        }
         let r = http.get(format!("{}/v1/models", trim(&urls.lmstudio))).timeout(probe_timeout).send().await.ok()?;
         let v: Value = r.json().await.ok()?;
         let models: Vec<Value> = v["data"]
@@ -141,16 +161,40 @@ pub async fn chat_stream(
         ),
         other => return Err(anyhow!("unknown runtime '{other}'")),
     };
-    let resp = http
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| anyhow!("cannot reach {} at {url}: {e}", m.runtime))?;
+    let send = |body: &Value| http.post(&url).json(body).send();
+    let mut resp = send(&body).await.map_err(|e| anyhow!("cannot reach {} at {url}: {e}", m.runtime))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(anyhow!("{} returned {status}: {}", m.runtime, text.chars().take(300).collect::<String>()));
+        // Some chat templates served by LM Studio (Gemma, Mistral variants) reject a
+        // system role. Retry once with the system text folded into the first user turn.
+        let lower = text.to_lowercase();
+        let role_problem = m.runtime == "lmstudio"
+            && status.as_u16() == 400
+            && (lower.contains("role") || lower.contains("template") || lower.contains("jinja") || lower.contains("alternate"));
+        if !role_problem {
+            let hint = if m.runtime == "lmstudio" && lower.contains("model") {
+                " (in LM Studio: download/load that model, or enable Just-In-Time loading in Developer settings)"
+            } else {
+                ""
+            };
+            return Err(anyhow!("{} returned {status}: {}{hint}", m.runtime, text.chars().take(300).collect::<String>()));
+        }
+        let sys: Vec<&str> = msgs.iter().filter(|x| x.role == "system").map(|x| x.content.as_str()).collect();
+        let mut folded: Vec<ChatMsg> = msgs.iter().filter(|x| x.role != "system").cloned().collect();
+        if let Some(first) = folded.iter_mut().find(|x| x.role == "user") {
+            first.content = format!("{}\n\n{}", sys.join("\n\n"), first.content);
+        } else {
+            folded.insert(0, ChatMsg::new("user", sys.join("\n\n")));
+        }
+        let mut b2 = body.clone();
+        b2["messages"] = json!(folded);
+        resp = send(&b2).await.map_err(|e| anyhow!("cannot reach {} at {url}: {e}", m.runtime))?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("{} returned {status}: {}", m.runtime, text.chars().take(300).collect::<String>()));
+        }
     }
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
@@ -184,6 +228,10 @@ pub async fn chat_stream(
                     continue;
                 }
                 let v: Value = serde_json::from_str(data).unwrap_or(Value::Null);
+                if let Some(err) = v["error"]["message"].as_str().or_else(|| v["error"].as_str()) {
+                    return Err(anyhow!("lmstudio: {err}"));
+                }
+                // `reasoning_content` (thinking models) is deliberately ignored: only the answer counts.
                 v["choices"][0]["delta"]["content"].as_str().unwrap_or("").to_string()
             };
             if !delta.is_empty() {
@@ -195,7 +243,7 @@ pub async fn chat_stream(
         }
     }
     if full.trim().is_empty() {
-        return Err(anyhow!("{} returned an empty reply (is the model loaded?)", m.runtime));
+        return Err(anyhow!("{} returned an empty reply (is the model loaded? thinking models can spend the whole token limit reasoning)", m.runtime));
     }
     Ok(full)
 }
