@@ -9,7 +9,7 @@ import { startTour, tourSeen } from './tour.js';
 import { createFloor } from './floor.js';
 import { createDesigner } from './designer.js';
 import { createBoard, createInbox, createNotebook } from './board.js';
-import { newRunDialog, runsDialog, settingsDialog, closeDrawer, closeModal } from './dialogs.js';
+import { newRunDialog, runsDialog, settingsDialog, appSettingsDialog, closeDrawer, closeModal } from './dialogs.js';
 
 const VIEWS = {
   floor: createFloor, designer: createDesigner, experiments: createBoard, inbox: createInbox, notebook: createNotebook,
@@ -28,13 +28,9 @@ function renderRail() {
   r.append(h('img', { class: 'logo', src: 'elenchia-logo.svg', alt: 'Elenchia' }));
   for (const [id, label, ic] of NAV) {
     const n = id === 'inbox' && isLive() ? (S.M?.openGates.length ?? 0) : 0;
-    r.append(h('button', { class: 'rail-btn', title: label, 'aria-label': label, 'aria-current': S.view === id ? 'page' : null, onclick: () => A.go(id) }, icon(ic), n ? h('span', { class: 'badge pulse' }, n) : null));
+    r.append(h('button', { class: 'rail-btn', 'data-tip': `${label}  [${NAV.findIndex((x) => x[0] === id) + 1}]`, 'aria-label': label, 'aria-current': S.view === id ? 'page' : null, onclick: () => A.go(id) }, icon(ic), n ? h('span', { class: 'badge pulse' }, n) : null));
   }
-  r.append(h('div', { class: 'spacer' }),
-    h('button', { class: 'rail-btn', title: 'Runs', 'aria-label': 'Runs', onclick: runsDialog }, icon('runs')),
-    h('button', { class: 'rail-btn', title: 'Runtimes & hardware', 'aria-label': 'Runtimes', onclick: settingsDialog }, icon('settings')),
-    h('button', { class: 'rail-btn', title: 'Quick-start tour', 'aria-label': 'Quick-start tour', onclick: () => startTour(newRunDialog) }, icon('help')),
-    h('button', { class: 'rail-btn', title: 'Toggle light / dark', 'aria-label': 'Toggle theme', onclick: () => A.toggleTheme() }, icon('sun')));
+r.append(h('div', { class: 'spacer' }),    h('button', { class: 'rail-btn', 'data-tip': 'Past runs and replay', 'aria-label': 'Past runs', onclick: runsDialog }, icon('runs')),    h('button', { class: 'rail-btn', 'data-tip': 'Models, hardware and servers', 'aria-label': 'Runtimes', onclick: settingsDialog }, icon('chip')),    h('button', { class: 'rail-btn', 'data-tip': 'Settings and tour', 'aria-label': 'Settings', onclick: () => appSettingsDialog({ replayTour: () => startTour(newRunDialog) }) }, icon('gear')),    h('button', { class: 'rail-btn', 'data-tip': S.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', 'aria-label': 'Toggle theme', onclick: () => A.toggleTheme() }, icon(S.theme === 'dark' ? 'sun' : 'moon')));
 }
 
 function renderTop() {

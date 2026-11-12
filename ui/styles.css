@@ -268,3 +268,16 @@ table.tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-
 .tour-dots i { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--fg-mute); }
 .tour-dots i.on { background: var(--fg); border-color: var(--fg); }
 .tour-card .btn-row { display: flex; gap: 8px; align-items: center; }
+/* The tour dims the app but leaves the title bar (drag, window controls) and the
+   window edges (resize) live: only the middle area is blocked from clicks. */
+#tour { pointer-events: none; }
+.tour-block { position: fixed; inset: 52px 8px 8px 8px; pointer-events: auto; }
+.tour-card { pointer-events: auto; }
+
+/* Hover labels for icon-only buttons */
+.rail-btn[data-tip]::after {
+  content: attr(data-tip); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+  background: var(--inv-bg); color: var(--inv-fg); font: 500 12px/1 var(--sans); padding: 7px 10px; border-radius: 7px;
+  white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s ease .35s; z-index: 900;
+}
+.rail-btn[data-tip]:hover::after { opacity: 1; }

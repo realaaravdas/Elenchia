@@ -5,7 +5,7 @@
 import { h } from './util.js';
 import { A } from './state.js';
 
-const rail = (title) => `.rail-btn[title="${title}"]`;
+const rail = (label) => `.rail-btn[aria-label="${label}"]`;
 
 const STEPS = [
   { title: 'Welcome to Elenchia', body: 'You are directing an AI lab, not chatting with an assistant. A team of agents (hypothesis generator, critic, experimentalist, statistician) argues about your research question, designs experiments, runs them, and grades the evidence. You decide what is allowed to happen.\n\nThis tour takes about a minute.' },
@@ -17,10 +17,10 @@ const STEPS = [
   { view: 'notebook', target: '#view', title: '5 · Lab notebook', rail: 'Lab notebook', body: 'The record: findings with their status (tentative or established), their supporting evidence and caveats, and what the lab tried and dropped. Export it as Markdown. Findings only become established if you accept them and the evidence is real.' },
   { view: 'floor', target: '#topbar .btn.primary', title: 'Start a run', body: 'Press N or click New run and type a research question. The first gate lets you edit how the lab manager restated it, set off-limits topics and a time budget. Then the lab runs; Halt run stops it at any time.' },
   { view: 'floor', target: '#topbar .pill[title]', fallback: '#topbar', title: 'Local models only', body: 'This pill shows how many local models Elenchia found. For LM Studio: load a model, start the server on the Developer tab, and it appears here within seconds. With none running you get a clearly labelled scripted demo lab, so you can still see the whole flow.' },
-  { view: 'floor', target: rail('Runtimes & hardware'), title: 'Runtimes & hardware', body: 'Server URLs for LM Studio (port 1234) and Ollama (11434), detected models, your RAM and VRAM, and whether Python is available for experiments.' },
-  { view: 'floor', target: rail('Runs'), title: 'Runs & replay', body: 'Every run is saved to an append-only, hash-chained log. Reopen any past run and scrub through it, or verify that the log was never altered.' },
-  { view: 'floor', target: rail('Toggle light / dark'), title: 'Keys', body: '1–5 switch views · N new run · Esc close panels · A / R / C / K on gate buttons to approve, reject, condition, or ask the critic again. The sun toggles light and dark.' },
-  { title: 'You are set', body: 'The quickest way to learn it: start a run with the demo lab (or your LM Studio model) and watch it reach the first gate. Replay this tour any time from the ? button at the bottom of the rail.', last: true },
+  { view: 'floor', target: rail('Runtimes'), title: 'Runtimes & hardware', body: 'Server URLs for LM Studio (port 1234) and Ollama (11434), detected models, your RAM and VRAM, and whether Python is available for experiments.' },
+  { view: 'floor', target: rail('Past runs'), title: 'Runs & replay', body: 'Every run is saved to an append-only, hash-chained log. Reopen any past run and scrub through it, or verify that the log was never altered.' },
+  { view: 'floor', target: rail('Settings'), title: 'Settings and this tour', body: 'Theme, calm mode, online literature search, keyboard shortcuts (1–5 views, N new run, A / R / C / K on gates) and a button to replay this tour any time. The sun/moon below it switches light and dark.' },
+  { title: 'You are set', body: 'The quickest way to learn it: start a run with the demo lab (or your LM Studio model) and watch it reach the first gate. Replay this tour any time from Settings (the gear at the bottom of the rail).', last: true },
 ];
 
 let root = null, idx = 0, onClose = null;
@@ -32,7 +32,7 @@ export function startTour(done) {
   if (root) return;
   onClose = done || null; idx = 0;
   root = h('div', { id: 'tour', role: 'dialog', 'aria-label': 'Quick start tour' },
-    h('div', { class: 'tour-spot' }), h('div', { class: 'tour-card' }));
+    h('div', { class: 'tour-block' }), h('div', { class: 'tour-spot' }), h('div', { class: 'tour-card' }));
   document.body.append(root);
   window.addEventListener('keydown', keys, true);
   window.addEventListener('resize', place);

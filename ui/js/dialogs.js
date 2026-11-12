@@ -173,8 +173,6 @@ export function runsDialog() {
 export function settingsDialog() {
   const d = S.detection, st = S.settings;
   const ou = h('input', { type: 'text', value: st.ollama_url }), lu = h('input', { type: 'text', value: st.lmstudio_url });
-  const lit = h('input', { type: 'checkbox', checked: !!st.literature_enabled });
-  const key = h('input', { type: 'password', placeholder: st.openalex_key_set ? 'A key is saved. Type to replace.' : 'Leave empty to use the shared limit' });
   const rt = (name, key) => {
     const x = d?.[key];
     return h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, name), pill(x?.up ? 'running' : 'not detected', x?.up ? 'solid' : 'dashed')),
@@ -182,16 +180,38 @@ export function settingsDialog() {
   };
   const hw = d?.hardware;
   openModal(h('div', {},
-    h('h2', {}, 'Runtimes & hardware'), h('div', { class: 'sub' }, 'Every agent runs on a local model. Nothing leaves this machine unless you enable online search below.'),
+    h('h2', {}, 'Runtimes & hardware'), h('div', { class: 'sub' }, 'Every agent runs on a local model. Nothing leaves this machine unless you turn on online search in Settings.'),
     h('div', { class: 'stack' }, rt('Ollama', 'ollama'), rt('LM Studio', 'lmstudio'),
       h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Python (experiment sandbox)'), pill(d?.python?.found ? d.python.version : 'not found', d?.python?.found ? 'solid' : 'dashed')), d?.python?.found ? null : h('div', { class: 'mute', style: { marginTop: '6px' } }, 'Install Python 3.9+ to run experiments. The scripted demo falls back to a built-in kernel, clearly labelled.')),
       h('div', { class: 'card pad' }, h('h3', {}, 'Hardware'), kvs([['RAM', hw ? `${hw.ram_free_gb} GB free of ${hw.ram_total_gb} GB` : '—'], ['GPU', hw?.vram ? `${hw.vram.gpu} · ${hw.vram.free_gb.toFixed(1)} GB free of ${hw.vram.total_gb.toFixed(1)} GB` : 'no NVIDIA GPU reported'], ['Scheduling', 'One large model loaded at a time by default']]))),
     h('hr', { class: 'hr' }),
     h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'Ollama URL'), ou), h('div', { class: 'field' }, h('label', {}, 'LM Studio URL'), lu)),
-    h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Online literature search'), pill('experimental', 'dashed')),
-      h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, lit, h('span', {}, 'Let the lab search OpenAlex / Semantic Scholar (asks you each time; sends only the query text)')),
-      h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'OpenAlex API key (optional, free; raises the daily limit)'), key)),
     h('div', { class: 'mute' }, `Data folder: ${st.data_dir}`),
     S.preview ? h('div', { class: 'card pad', style: { marginTop: '12px' } }, 'Browser preview: replaying a run recorded from the desktop backend. Install the desktop app for local models, the real sandbox and persistent storage.') : null,
-    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'), h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(ou.value, lu.value, { literatureEnabled: lit.checked, openalexKey: key.value }); closeModal(); toast('Rescanned runtimes.'); } }, 'Save & rescan'))));
+    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'), h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(ou.value, lu.value); closeModal(); toast('Rescanned runtimes.'); } }, 'Save & rescan'))));
+}
+
+// ---------- App settings ----------
+export function appSettingsDialog({ replayTour }) {
+  const st = S.settings;
+  const lit = h('input', { type: 'checkbox', checked: !!st.literature_enabled });
+  const key = h('input', { type: 'password', placeholder: st.openalex_key_set ? 'A key is saved. Type to replace.' : 'Leave empty to use the shared limit' });
+  const calm = h('input', { type: 'checkbox', checked: !!S.calm, onchange: () => A.toggleCalm() });
+  const keys = [['1 – 5', 'Switch between the five views'], ['N', 'Start a new run'], ['Esc', 'Close panels'], ['A / R / C / K', 'On a gate: approve, reject, approve with condition, ask the critic again']];
+  openModal(h('div', {},
+    h('h2', {}, 'Settings'), h('div', { class: 'sub' }, `Elenchia ${st.version || ''}`),
+    h('div', { class: 'stack' },
+      h('div', { class: 'card pad' }, h('h3', {}, 'Help'),
+        h('div', { class: 'dim', style: { margin: '4px 0 8px' } }, 'A guided walk through the five views, the gates and the controls.'),
+        h('button', { class: 'btn', onclick: () => { closeModal(); replayTour(); } }, 'Replay the quick-start tour')),
+      h('div', { class: 'card pad' }, h('h3', {}, 'Appearance'),
+        h('div', { class: 'row', style: { marginTop: '8px' } }, h('span', { style: { flex: 1 } }, 'Theme'), h('button', { class: 'btn sm', onclick: () => A.toggleTheme() }, 'Switch light / dark')),
+        h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, calm, h('span', {}, 'Calm mode: freeze the living diagram’s motion'))),
+      h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Online literature search'), pill('experimental', 'dashed')),
+        h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, lit, h('span', {}, 'Let the lab search OpenAlex / Semantic Scholar (asks you each time; sends only the query text)')),
+        h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'OpenAlex API key (optional, free; raises the daily limit)'), key)),
+      h('div', { class: 'card pad' }, h('h3', {}, 'Keyboard shortcuts'), kvs(keys))),
+    h('div', { class: 'mute', style: { marginTop: '12px' } }, `Data folder: ${st.data_dir}`),
+    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'),
+      h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(st.ollama_url, st.lmstudio_url, { literatureEnabled: lit.checked, openalexKey: key.value }); closeModal(); toast('Settings saved.'); } }, 'Save'))));
 }

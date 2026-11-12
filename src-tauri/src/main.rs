@@ -92,7 +92,7 @@ fn verify_audit(st: S<'_>, run_id: String) -> Result<Value, String> {
 #[tauri::command]
 fn get_settings(st: S<'_>) -> Value {
     let u = urls(&st);
-    json!({"ollama_url": u.ollama, "lmstudio_url": u.lmstudio, "data_dir": st.data_dir.display().to_string(),
+    json!({"version": env!("CARGO_PKG_VERSION"), "ollama_url": u.ollama, "lmstudio_url": u.lmstudio, "data_dir": st.data_dir.display().to_string(),
            "literature_enabled": st.store.setting("literature_enabled").as_deref() == Some("1"),
            "openalex_key_set": st.store.setting("openalex_key").map(|k| !k.is_empty()).unwrap_or(false)})
 }
