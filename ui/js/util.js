@@ -137,3 +137,19 @@ export function put(el, ...kids) {
   for (const k of kids.flat(Infinity)) if (k != null && k !== false) el.append(k.nodeType ? k : document.createTextNode(String(k)));
   return el;
 }
+
+/** Separate a model's inline <think>…</think> reasoning from its answer (works on partial streams). */
+export function splitThink(raw) {
+  let thought = '', answer = '', rest = raw || '';
+  for (;;) {
+    const s = rest.indexOf('<think>');
+    if (s < 0) { answer += rest; break; }
+    answer += rest.slice(0, s);
+    const e = rest.indexOf('</think>', s);
+    if (e < 0) { thought += rest.slice(s + 7); break; }
+    thought += rest.slice(s + 7, e); rest = rest.slice(e + 8);
+  }
+  const c = answer.lastIndexOf('</think>'); // opening tag was eaten by the chat template
+  if (c >= 0) { thought += answer.slice(0, c); answer = answer.slice(c + 8); }
+  return { thought: thought.trim(), answer };
+}

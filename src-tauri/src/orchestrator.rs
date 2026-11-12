@@ -438,13 +438,13 @@ impl Run {
         let (halted, app, run_id, mid, from) =
             (self.halted.clone(), self.st.app.clone(), self.id.clone(), msg_id.to_string(), agent.id.clone());
         let urls = self.urls();
-        let fut = runtime::chat_stream(&self.st.http, &urls, &agent.model, msgs, move |d| {
+        let fut = runtime::chat_stream(&self.st.http, &urls, &agent.model, msgs, move |thought, d| {
             if halted.load(Ordering::SeqCst) {
                 return false;
             }
             let _ = app.emit(
                 "lab-event",
-                json!({"persisted": false, "run_id": run_id, "kind": "message_delta", "data": {"id": mid, "from": from, "text": d}}),
+                json!({"persisted": false, "run_id": run_id, "kind": "message_delta", "data": {"id": mid, "from": from, "text": d, "channel": if thought { "thought" } else { "answer" }}}),
             );
             true
         });

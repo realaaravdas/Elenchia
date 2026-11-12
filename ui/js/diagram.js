@@ -7,7 +7,7 @@
 //   conversation = packets along the link and a speech bubble that streams the model's words
 // Everything drawn maps to an event in the log; clicking jumps to the matching card.
 
-import { ARGUE, GRADE_N, STAGE_LABEL, partialSay, trunc } from './util.js';
+import { ARGUE, GRADE_N, STAGE_LABEL, partialSay, splitThink, trunc } from './util.js';
 
 const R = 24;
 const ease = (t) => (t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t));
@@ -101,11 +101,13 @@ export class Floor {
     }
   }
 
-  delta(msgId, from, raw) {
-    const b = this.bubbles.get(from);
-    const text = partialSay(raw);
-    if (b && b.msgId === msgId) { b.text = text; b.t = performance.now(); b.raw = raw; }
-    else this.bubbles.set(from, { msgId, text, streaming: true, t: performance.now(), raw });
+  delta(msgId, from, raw, thoughtRaw = '') {
+    const now = performance.now();
+    let b = this.bubbles.get(from);
+    if (!b || b.msgId !== msgId) { b = { msgId, text: '', thought: '', streaming: true, t: now, t0: now, last: null }; this.bubbles.set(from, b); }
+    const s = splitThink(raw);
+    b.thought = `${thoughtRaw || ''} ${s.thought}`.trim();
+    b.text = partialSay(s.answer); b.raw = raw; b.t = now; b.last = now; this.dirty = true;
   }
 
   // ----- pointer -----
@@ -270,11 +272,14 @@ export class Floor {
 
   drawSandbox(now, animate) {
     const { ctx, c, M } = this, s = this.sandbox(), g = this.gatePt(), e = this.kindPos('experimentalist');
+    // Only shown once an experiment is in play: experimentalist -> approval gate -> sandbox.
+    const inPlay = M.exps.size > 0 || M.openGates.some((x) => x.kind === 'experiment' || x.kind === 'resource') || ['design', 'approve', 'run', 'analyze'].includes(M.phase);    if (!inPlay) return;
+    if (!inPlay) return;
     // sandbox box
     ctx.lineWidth = 1; ctx.strokeStyle = c.strong; ctx.fillStyle = c.solid; ctx.setLineDash([4, 4]);
     rr(ctx, s.x - 62, s.y - 30, 124, 60, 10); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
     ctx.font = `600 9.5px ${c.mono}`; ctx.fillStyle = c.mute; ctx.textAlign = 'center';
-    ctx.fillText('SANDBOX', s.x, s.y - 14); ctx.fillText('no network', s.x, s.y + 24);
+    ctx.fillText('SANDBOX', s.x, s.y - 14); ctx.fillText('runs approved code', s.x, s.y + 4); ctx.fillText('no network', s.x, s.y + 24);
     this.hit.push({ type: 'sandbox', r: { x: s.x - 62, y: s.y - 30, w: 124, h: 60 } });
     // gate
     const open = M.openGates.some((x) => x.kind === 'experiment' || x.kind === 'resource');
@@ -284,7 +289,7 @@ export class Floor {
     line(ctx, { x: g.x + nx * 30, y: g.y + ny * 30 }, { x: g.x + nx * 9, y: g.y + ny * 9 });
     line(ctx, { x: g.x - nx * 9, y: g.y - ny * 9 }, { x: g.x - nx * 30, y: g.y - ny * 30 });
     ctx.globalAlpha = 1; ctx.fillStyle = open ? c.fg : c.mute; ctx.font = `600 9.5px ${c.mono}`;
-    ctx.fillText(open ? 'GATE · WAITING ON YOU' : 'GATE', g.x + nx * 46 + 4, g.y + ny * 46);
+    ctx.fillText(open ? 'APPROVAL GATE · WAITING ON YOU' : 'APPROVAL GATE', g.x + nx * 46 + 4, g.y + ny * 46);
     // vessels
     for (const [id, x] of M.exps) {
       let v = this.vessels.get(id);
@@ -384,29 +389,49 @@ export class Floor {
     let alpha = 1;
     if (!b.streaming && !b.pinned) { const age = now - b.t; if (age > 9000) alpha = Math.max(0, 1 - (age - 9000) / 1500); if (alpha <= 0) { this.bubbles.delete(a.id); return; } }
     const p = this.pos(a.id);
-    const text = b.streaming && !b.text ? '…' : b.text;
     const maxW = 230;
-    ctx.font = `12px ${c.sans}`;
+    const secs = b.t0 != null ? Math.max(0, Math.floor((now - b.t0) / 1000)) : null;
+    // What to show: the answer if it has started, else the model's live thoughts, else a waiting state.
+    let text = b.text, head = (b.streaming ? (STAGE_LABEL[b.stage] || 'speaking') : a.name).toUpperCase().slice(0, 30), italic = false, hint = null;
+    if (b.streaming && !b.text) {
+      if (b.thought) {
+        const tail = b.thought.length > 300 ? '…' + b.thought.slice(-300).replace(/^\S*\s/, '') : b.thought;
+        text = tail; italic = true; head = `THINKING${secs != null ? ' · ' + secs + 's' : ''}`;
+      } else {
+        const dots = '.'.repeat(1 + (Math.floor(now / 380) % 3));
+        text = secs != null && secs < 2 ? 'Sending to the model' + dots : 'Waiting for the model' + dots;
+        head = `${secs != null && secs >= 2 ? 'WAITING · ' + secs + 's' : 'STARTING'}`; italic = true;
+      }
+    } else if (b.streaming && secs != null) head = `${head} · ${secs}s`;
+    if (b.streaming && b.t0 != null) {
+      const quiet = (now - (b.last ?? b.t0)) / 1000;
+      if (quiet > 15) hint = b.last ? 'No new words for a while. It may be a long reasoning pass.' : 'Still no reply. A cold model can take a minute to load.';
+    }
+    ctx.font = `600 9px ${c.mono}`; const headW = ctx.measureText(head).width + 20;
+    ctx.font = `${italic ? 'italic ' : ''}12px ${c.sans}`;
     let lines = wrap(ctx, text, maxW - 20);
-    const maxLines = 5; let clipped = false;
+    const maxLines = italic ? 4 : 5; let clipped = false;
     if (lines.length > maxLines) { lines = b.streaming ? lines.slice(-maxLines) : lines.slice(0, maxLines); clipped = true; if (!b.streaming) lines[maxLines - 1] = trunc(lines[maxLines - 1] + ' …', 40); }
-    const head = (b.streaming ? (STAGE_LABEL[b.stage] || 'speaking') : a.name).toUpperCase().slice(0, 30);
-    ctx.font = `600 9px ${c.mono}`; const headW = ctx.measureText(head).width + 20; ctx.font = `12px ${c.sans}`;
-    const lh = 16, w = Math.min(maxW + 40, Math.max(headW, ...lines.map((l) => ctx.measureText(l).width + 20))), hgt = lines.length * lh + 26;
+    const lh = 16, w = Math.min(maxW + 40, Math.max(headW, ...lines.map((l) => ctx.measureText(l).width + 20))), hgt = lines.length * lh + 26 + (hint ? 18 : 0);
     const above = p.y > hgt + 70;
     let x = clampN2(p.x - w / 2, 8, this.W - w - 8);
     const y = above ? p.y - R - 16 - hgt : p.y + R + 44;
     ctx.save(); ctx.globalAlpha = alpha;
     ctx.fillStyle = c.solid; ctx.strokeStyle = b.streaming ? c.fg : c.strong; ctx.lineWidth = b.streaming ? 1.4 : 1;
-    rr(ctx, x, y, w, hgt, 10); ctx.fill(); ctx.stroke();
+    if (b.streaming && italic) ctx.setLineDash([4, 3]);
+    rr(ctx, x, y, w, hgt, 10); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
     // tail
     const tx = clampN2(p.x, x + 14, x + w - 14), ty = above ? y + hgt : y;
     ctx.beginPath(); ctx.moveTo(tx - 6, ty); ctx.lineTo(tx, ty + (above ? 8 : -8)); ctx.lineTo(tx + 6, ty); ctx.fillStyle = c.solid; ctx.fill();
     ctx.beginPath(); ctx.moveTo(tx - 6, ty); ctx.lineTo(tx, ty + (above ? 8 : -8)); ctx.lineTo(tx + 6, ty); ctx.stroke();
     ctx.fillStyle = c.mute; ctx.font = `600 9px ${c.mono}`; ctx.textAlign = 'left';
     ctx.fillText(head, x + 10, y + 14);
-    ctx.fillStyle = c.fg; ctx.font = `12px ${c.sans}`;
+    // live indicator: three pulsing dots at the top-right of a streaming bubble
+    if (b.streaming && !this.calm) for (let i = 0; i < 3; i++) { ctx.globalAlpha = alpha * (0.25 + 0.75 * Math.max(0, Math.sin(now / 240 - i * 0.9))); ctx.fillStyle = c.fg; ctx.beginPath(); ctx.arc(x + w - 30 + i * 9, y + 11, 2, 0, 7); ctx.fill(); }
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = italic ? c.dim : c.fg; ctx.font = `${italic ? 'italic ' : ''}12px ${c.sans}`;
     lines.forEach((l, i) => ctx.fillText(l, x + 10, y + 30 + i * lh));
+    if (hint) { ctx.fillStyle = c.mute; ctx.font = `10.5px ${c.sans}`; ctx.fillText(trunc(hint, 44), x + 10, y + hgt - 8); }
     ctx.restore();
     this.hit.push({ type: 'bubble', id: b.msgId, agent: a.id, r: { x, y, w, h: hgt } });
   }

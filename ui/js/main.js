@@ -70,18 +70,20 @@ function handleEvent(p) {
   if (!p.persisted) {
     if (p.run_id !== S.runId && !S.awaiting) return;
     if (p.kind === 'message_delta') {
-      const raw = (S.live.get(p.data.id) || '') + p.data.text; S.live.set(p.data.id, raw);
-      if (S.view === 'floor') view?.delta?.(p.data.id, p.data.from, raw);
+      const id = p.data.id;
+      if (p.data.channel === 'thought') S.thought.set(id, (S.thought.get(id) || '') + p.data.text);
+      else S.live.set(id, (S.live.get(id) || '') + p.data.text);
+      if (S.view === 'floor') view?.delta?.(id, p.data.from, S.live.get(id) || '', S.thought.get(id) || '');
     }
     return;
   }
   const ev = p.event;
   if (ev.run_id !== S.runId) {
-    if (S.awaiting && ev.kind === 'run_started') { S.runId = ev.run_id; S.events = []; S.live.clear(); }
+    if (S.awaiting && ev.kind === 'run_started') { S.runId = ev.run_id; S.events = []; S.live.clear(); S.thought.clear(); }
     else { if (ev.kind === 'run_ended') loadRuns(); return; }
   }
   S.events.push(ev);
-  if (ev.kind === 'message') S.live.delete(ev.data.id);
+  if (ev.kind === 'message') { S.live.delete(ev.data.id); S.thought.delete(ev.data.id); }
   if (ev.kind === 'run_started') S.awaiting = false;
   if (S.replay != null) { refresh(null); return; } // user is scrubbing; keep their place
   recompute();
@@ -99,7 +101,7 @@ Object.assign(A, {
     mountView(opts); renderTop();
   },
   async startRun(params) {
-    S.awaiting = true; S.events = []; S.replay = null; S.live.clear(); S.focus = null; stopPlay();
+    S.awaiting = true; S.events = []; S.replay = null; S.live.clear(); S.thought.clear(); S.focus = null; stopPlay();
     try {
       const id = await call('start_run', { lab: S.lab, params });
       S.runId = id; await loadRuns();
@@ -108,7 +110,7 @@ Object.assign(A, {
   },
   async loadRun(id) {
     stopPlay();
-    S.events = await call('run_events', { runId: id }); S.runId = id; S.replay = null; S.live.clear();
+    S.events = await call('run_events', { runId: id }); S.runId = id; S.replay = null; S.live.clear(); S.thought.clear();
     recompute(); A.go('floor');
   },
   async resolve(gateId, decision) { await call('resolve_gate', { gateId, decision }); },

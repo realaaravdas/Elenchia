@@ -23,7 +23,7 @@ export function replayBar() {
 export function createFloor() {
   const canvas = h('canvas', { 'aria-label': 'Living diagram of the lab' });
   const lanes = h('section', { class: 'lanes' });
-  const legend = h('div', { class: 'legend' }, 'seed = hypothesis · crack = open objection · vessel = experiment · gate = needs you · signal = evidence');
+  const legend = h('div', { class: 'legend' }, 'seed = hypothesis · crack = open objection · vessel = experiment · signal = evidence');
   const banner = h('div', { class: 'banner' });
   const welcome = h('div', { style: { position: 'absolute', inset: 0, display: 'none', placeItems: 'center', pointerEvents: 'none' } });
   const stage = h('section', { class: 'stage' }, canvas, legend, banner, welcome);
@@ -31,6 +31,32 @@ export function createFloor() {
   const body = h('div', { class: 'body' });
   const feed = h('section', { class: 'feed' }, tabs, body);
   const root = h('div', { class: 'floor' }, lanes, stage, feed);
+
+  // Resizable columns: drag the edges, double-click to reset. Sizes persist.
+  const store = { get: (k) => { try { return +localStorage.getItem(k) || null; } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, String(v)); } catch { /* ignore */ } } };
+  const apply = () => {
+    const lw = store.get('elenchia.lanesW'), fw = store.get('elenchia.feedW');
+    if (lw) root.style.setProperty('--lanes-w', lw + 'px'); else root.style.removeProperty('--lanes-w');
+    if (fw) root.style.setProperty('--feed-w', fw + 'px'); else root.style.removeProperty('--feed-w');
+  };
+  const splitter = (cls, key, min, maxFrac, sign) => {
+    const el = h('div', { class: 'split ' + cls, role: 'separator', 'aria-orientation': 'vertical', title: 'Drag to resize · double-click to reset' });
+    el.addEventListener('dblclick', () => { try { localStorage.removeItem(key); } catch { /* ignore */ } apply(); });
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('drag');
+      const rect = root.getBoundingClientRect();
+      const move = (ev) => {
+        const w = sign > 0 ? ev.clientX - rect.left : rect.right - ev.clientX;
+        const v = Math.round(Math.max(min, Math.min(rect.width * maxFrac, w)));
+        store.set(key, v); apply();
+      };
+      const up = () => { el.classList.remove('drag'); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); };
+      el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    });
+    return el;
+  };
+  root.append(splitter('lanes-split', 'elenchia.lanesW', 150, 0.35, 1), splitter('feed-split', 'elenchia.feedW', 260, 0.7, -1));
+  apply();
 
   const floor = new Floor(canvas, {
     onAgent: (id) => agentDrawer(id),
@@ -123,7 +149,7 @@ export function createFloor() {
   return {
     el: root,
     update,
-    delta: (msgId, from, raw) => floor.delta(msgId, from, raw),
+    delta: (msgId, from, raw, thought) => floor.delta(msgId, from, raw, thought),
     destroy: () => floor.destroy(),
     floor,
   };

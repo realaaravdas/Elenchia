@@ -196,7 +196,7 @@ async fn chat_once(
     m: &ModelRef,
     msgs: &[ChatMsg],
     max_tokens: u32,
-    on_delta: &mut impl FnMut(&str) -> bool,
+    on_delta: &mut impl FnMut(bool, &str) -> bool,
 ) -> Result<(String, String)> {
     // OpenAI's newer reasoning models (o-series, gpt-5) take max_completion_tokens
     // and only the default temperature; send that shape up front for them.
@@ -312,6 +312,13 @@ async fn chat_once(
                 if let Some(err) = v["error"].as_str() {
                     return Err(anyhow!("ollama: {err}"));
                 }
+                // Ollama thinking models stream message.thinking beside message.content.
+                if let Some(t) = v["message"]["thinking"].as_str().filter(|t| !t.is_empty()) {
+                    reasoning.push_str(t);
+                    if !on_delta(true, t) {
+                        return Err(anyhow!("aborted"));
+                    }
+                }
                 v["message"]["content"].as_str().unwrap_or("").to_string()
             } else {
                 let Some(data) = line.strip_prefix("data:") else { continue };
@@ -328,12 +335,15 @@ async fn chat_once(
                 let d = &v["choices"][0]["delta"];
                 if let Some(r) = d["reasoning_content"].as_str().or_else(|| d["reasoning"].as_str()) {
                     reasoning.push_str(r);
+                    if !r.is_empty() && !on_delta(true, r) {
+                        return Err(anyhow!("aborted"));
+                    }
                 }
                 v["choices"][0]["delta"]["content"].as_str().unwrap_or("").to_string()
             };
             if !delta.is_empty() {
                 full.push_str(&delta);
-                if !on_delta(&delta) {
+                if !on_delta(false, &delta) {
                     return Err(anyhow!("aborted"));
                 }
             }
@@ -373,7 +383,7 @@ pub async fn chat_stream(
     urls: &Urls,
     m: &ModelRef,
     msgs: &[ChatMsg],
-    mut on_delta: impl FnMut(&str) -> bool,
+    mut on_delta: impl FnMut(bool, &str) -> bool,
 ) -> Result<String> {
     let base = if m.runtime == "lmstudio" || m.runtime == "openai" { m.max_tokens.max(4096) } else { m.max_tokens };
     let (full, reasoning) = chat_once(http, urls, m, msgs, base, &mut on_delta).await?;

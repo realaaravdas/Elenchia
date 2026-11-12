@@ -15,6 +15,7 @@ export const S = {
   replay: null, // null = live; otherwise number of events shown
   playing: false,
   live: new Map(), // msgId -> raw streamed text
+  thought: new Map(), // msgId -> streamed reasoning text (what the model is thinking)
   feedTab: 'debate',
   calm: false,
   theme: 'dark',
