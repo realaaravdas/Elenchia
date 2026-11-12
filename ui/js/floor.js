@@ -36,7 +36,17 @@ export function createFloor() {
     toolchip.append(h('span', { class: 'spin' }), h('span', {}, s.text), h('span', { class: 'mute' }, ` · ${Math.floor((Date.now() - s.t0) / 1000)}s`));
     if (!toolTimer) toolTimer = setInterval(renderTool, 1000);
   };
-  const tabs = h('div', { class: 'tabs', role: 'tablist' });
+  const tabInd = h('div', { class: 'tab-ind no-anim', 'aria-hidden': 'true' });
+  const tabs = h('div', { class: 'tabs', role: 'tablist' }, tabInd);
+  let tabPlaced = false;
+  const placeTab = (animate = true) => {
+    const b = tabs.querySelector('[aria-selected="true"]');
+    if (!b || !b.offsetWidth) return;
+    if (!animate) tabInd.classList.add('no-anim');
+    tabInd.style.width = b.offsetWidth + 'px'; tabInd.style.transform = `translateX(${b.offsetLeft}px)`;
+    if (!animate || !tabPlaced) { tabPlaced = true; void tabInd.offsetWidth; setTimeout(() => tabInd.classList.remove('no-anim'), 80); }
+  };
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => placeTab(false)).observe(tabs);
   const body = h('div', { class: 'body' });
   const feed = h('section', { class: 'feed' }, tabs, body);
   const root = h('div', { class: 'floor' }, lanes, stage, feed);
@@ -110,11 +120,12 @@ export function createFloor() {
   }
 
   function renderFeed(M) {
-    clear(tabs);
+    [...tabs.children].forEach((c) => { if (c !== tabInd) c.remove(); }); // keep the indicator element so it can slide
     const tabList = [['debate', 'Debate'], ['transcript', 'Transcript'], ['log', 'Decisions']];
     if (S.browserView || M.browsed?.length) tabList.splice(2, 0, ['browser', 'Browser']);
     for (const [id, label] of tabList)
       tabs.append(h('button', { role: 'tab', 'aria-selected': S.feedTab === id, onclick: () => { S.feedTab = id; renderFeed(M); } }, label));
+    placeTab(true);
     const prev = body.scrollTop, atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
     clear(body);
     if (S.feedTab === 'debate') {

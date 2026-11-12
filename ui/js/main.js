@@ -24,14 +24,69 @@ const ls = {
 };
 
 // ---------- chrome ----------
+const railInd = h('div', { class: 'rail-ind no-anim', 'aria-hidden': 'true' });
+let railPlaced = false;
+
+function placeRailInd(r) {
+  const btn = r.querySelector('.rail-btn[aria-current="page"]');
+  if (!btn) { railInd.style.opacity = '0'; return; }
+  railInd.style.transform = `translateY(${btn.offsetTop}px)`;
+  railInd.style.opacity = '1';
+  if (!railPlaced) { railPlaced = true; setTimeout(() => railInd.classList.remove('no-anim'), 80); }
+}
+
+const navBtns = new Map();
+let railBuilt = false, themeBtn = null;
+
 function renderRail() {
-  const r = $('#rail'); clear(r);
-  r.append(h('img', { class: 'logo', src: 'elenchia-logo.svg', alt: 'Elenchia' }));
-  for (const [id, label, ic] of NAV) {
-    const n = id === 'inbox' && isLive() ? (S.M?.openGates.length ?? 0) : 0;
-    r.append(h('button', { class: 'rail-btn', 'data-tip': `${label}  [${NAV.findIndex((x) => x[0] === id) + 1}]`, 'aria-label': label, 'aria-current': S.view === id ? 'page' : null, onclick: () => A.go(id) }, icon(ic), n ? h('span', { class: 'badge pulse' }, n) : null));
+  const r = $('#rail');
+  // Build the rail once and only update state afterwards, so the indicator can
+  // slide and the icons can cross-fade their contrast as it passes under them.
+  if (!railBuilt) {
+    railBuilt = true;
+    r.append(railInd, h('img', { class: 'logo', src: 'elenchia-logo.svg', alt: 'Elenchia' }));
+    NAV.forEach(([id, label, ic], i) => {
+      const b = h('button', { class: 'rail-btn', 'data-tip': `${label}  [${i + 1}]`, 'aria-label': label, onclick: () => A.go(id) }, icon(ic));
+      navBtns.set(id, b); r.append(b);
+    });
+    themeBtn = h('button', { class: 'rail-btn', 'aria-label': 'Toggle theme', onclick: () => A.toggleTheme() });
+    r.append(h('div', { class: 'spacer' }),
+      h('button', { class: 'rail-btn', 'data-tip': 'Past runs and replay', 'aria-label': 'Past runs', onclick: runsDialog }, icon('runs')),
+      h('button', { class: 'rail-btn', 'data-tip': 'Models, hardware and servers', 'aria-label': 'Runtimes', onclick: settingsDialog }, icon('chip')),
+      h('button', { class: 'rail-btn', 'data-tip': 'Settings and tour', 'aria-label': 'Settings', onclick: () => appSettingsDialog({ replayTour: () => startTour(newRunDialog) }) }, icon('gear')),
+      themeBtn);
   }
-r.append(h('div', { class: 'spacer' }),    h('button', { class: 'rail-btn', 'data-tip': 'Past runs and replay', 'aria-label': 'Past runs', onclick: runsDialog }, icon('runs')),    h('button', { class: 'rail-btn', 'data-tip': 'Models, hardware and servers', 'aria-label': 'Runtimes', onclick: settingsDialog }, icon('chip')),    h('button', { class: 'rail-btn', 'data-tip': 'Settings and tour', 'aria-label': 'Settings', onclick: () => appSettingsDialog({ replayTour: () => startTour(newRunDialog) }) }, icon('gear')),    h('button', { class: 'rail-btn', 'data-tip': S.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', 'aria-label': 'Toggle theme', onclick: () => A.toggleTheme() }, icon(S.theme === 'dark' ? 'sun' : 'moon')));
+  for (const [id] of NAV) {
+    const b = navBtns.get(id);
+    if (S.view === id) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    b.querySelector('.badge')?.remove();
+    const n = id === 'inbox' && isLive() ? (S.M?.openGates.length ?? 0) : 0;
+    if (n) b.append(h('span', { class: 'badge pulse' }, n));
+  }
+  themeBtn.setAttribute('data-tip', S.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+  themeBtn.replaceChildren(icon(S.theme === 'dark' ? 'sun' : 'moon'));
+  placeRailInd(r);
+}
+
+
+const STATUS_KEY = [
+  ['run', 'Running', 'Agents are working. A pulsing dot means it is alive, not stuck.'],
+  ['search', 'Searching', 'An agent is searching papers or the web, or reading a page.'],
+  ['retry', 'Retrying', 'A model reply was unusable or the server hiccuped; it is trying again by itself.'],
+  ['wait', 'Waiting on you', 'The lab needs your decision. Open the Approval inbox.'],
+  ['done', 'Completed', 'The run finished.'],
+  ['halt', 'Halted / Stopped', 'You halted it, or a time or turn budget ran out.'],
+  ['err', 'Error', 'Something failed and could not be recovered.'],
+  ['idle', 'Idle / Replay', 'Nothing is running, or you are replaying a past run.'],
+];
+
+/** Hover legend: what every status colour means, with the current one highlighted. */
+function statusLegend(current, detail) {
+  return h('div', { class: 'st-pop', role: 'tooltip' },
+    h('div', { class: 'cap' }, 'What the status colours mean'),
+    detail ? h('div', { class: 'st-now' }, detail) : null,
+    STATUS_KEY.map(([k, name, text]) => h('div', { class: `st-row st-${k}${k === current ? ' cur' : ''}` },
+      h('span', { class: `dot${['run', 'search', 'retry'].includes(k) ? ' live' : ''}` }), h('div', {}, h('b', {}, name), h('div', { class: 'mute' }, text)))));
 }
 
 /** The one colour-coded element in the app: what the lab is doing right now. */
@@ -55,8 +110,8 @@ function statusIndicator(M) {
     kind = 'run'; label = 'Running'; detail = active ? `${name(active[0])} ${active[1].status === 'arguing' ? 'is arguing' : 'is thinking'}` : (M.phase || '');
   }
   const live = ['run', 'search', 'retry'].includes(kind);
-  return h('div', { class: `status st-${kind}${live ? ' live' : ''}`, role: 'status', title: detail ? `${label}: ${detail}` : label },
-    h('span', { class: 'dot' }), h('b', {}, label), detail ? h('span', { class: 'sd' }, trunc(detail, 34)) : null);
+  return h('div', { class: `status st-${kind}${live ? ' live' : ''}`, role: 'status', tabindex: 0, 'aria-label': detail ? `${label}: ${detail}` : label },
+    h('span', { class: 'dot' }), h('b', {}, label), detail ? h('span', { class: 'sd' }, trunc(detail, 34)) : null, statusLegend(kind, detail));
 }
 
 function renderTop() {
