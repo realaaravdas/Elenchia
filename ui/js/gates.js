@@ -88,6 +88,17 @@ export function gateControls(g, opts = {}) {
       why);
   }
 
+  if (g.kind === 'literature') {
+    const q = h('textarea', { rows: 3 }, d.query);
+    put(wrap,
+      h('div', { class: 'card pad blocked' }, h('div', { class: 'cap' }, 'Experimental · leaves this machine'),
+        h('div', { style: { marginTop: '4px' } }, 'Only the text below is sent, to: ', (d.services || []).join(' · '), '. Nothing else about your lab, data or models is shared.')),
+      h('div', { class: 'field' }, h('label', {}, 'Search query (edit before sending)'), q),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn primary', ...key('a'), onclick: () => decide(g, 'approve', null, { query: q.value }) }, 'Search ', h('kbd', {}, 'A')),
+        h('button', { class: 'btn', ...key('r'), onclick: () => decide(g, 'skip') }, 'Skip, stay offline ', h('kbd', {}, 'R'))));
+  }
+
   if (g.kind === 'ethics') {
     const n = note('Written reason or constraint…');
     put(wrap, 

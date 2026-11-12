@@ -5,6 +5,8 @@ mod orchestrator;
 mod roles;
 mod runtime;
 mod sandbox;
+mod scholar;
+mod sources;
 mod store;
 
 use orchestrator::{AppState, Decision, StartParams};
@@ -90,13 +92,79 @@ fn verify_audit(st: S<'_>, run_id: String) -> Result<Value, String> {
 #[tauri::command]
 fn get_settings(st: S<'_>) -> Value {
     let u = urls(&st);
-    json!({"ollama_url": u.ollama, "lmstudio_url": u.lmstudio, "data_dir": st.data_dir.display().to_string()})
+    json!({"ollama_url": u.ollama, "lmstudio_url": u.lmstudio, "data_dir": st.data_dir.display().to_string(),
+           "literature_enabled": st.store.setting("literature_enabled").as_deref() == Some("1"),
+           "openalex_key_set": st.store.setting("openalex_key").map(|k| !k.is_empty()).unwrap_or(false)})
 }
 
 #[tauri::command]
-fn set_settings(st: S<'_>, ollama_url: String, lmstudio_url: String) -> Result<(), String> {
+fn set_settings(
+    st: S<'_>,
+    ollama_url: String,
+    lmstudio_url: String,
+    literature_enabled: Option<bool>,
+    openalex_key: Option<String>,
+) -> Result<(), String> {
     st.store.set_setting("ollama_url", ollama_url.trim()).map_err(|e| e.to_string())?;
-    st.store.set_setting("lmstudio_url", lmstudio_url.trim()).map_err(|e| e.to_string())
+    st.store.set_setting("lmstudio_url", lmstudio_url.trim()).map_err(|e| e.to_string())?;
+    if let Some(on) = literature_enabled {
+        st.store.set_setting("literature_enabled", if on { "1" } else { "0" }).map_err(|e| e.to_string())?;
+    }
+    if let Some(k) = openalex_key {
+        // An empty field means "leave as is"; clearing is done by entering a single space.
+        if !k.is_empty() {
+            st.store.set_setting("openalex_key", k.trim()).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn source_json(s: &sources::Source) -> Value {
+    json!({"id": s.id, "name": s.name, "kind": s.kind, "origin": s.origin, "chars": s.text.chars().count(),
+           "preview": s.text.chars().take(240).collect::<String>()})
+}
+
+/// Opens the native file dialog and reads whatever the user picks.
+#[tauri::command]
+async fn pick_sources(st: S<'_>) -> Result<Value, String> {
+    let picked = rfd::AsyncFileDialog::new()
+        .set_title("Attach reference material")
+        .add_filter("Documents", &["pdf", "txt", "md", "markdown", "csv", "tsv", "json", "tex", "bib", "html", "htm", "rst", "xml", "yaml", "yml"])
+        .pick_files()
+        .await
+        .unwrap_or_default();
+    let (mut added, mut errors) = (vec![], vec![]);
+    for f in picked {
+        match sources::from_path(f.path()).await {
+            Ok(s) => {
+                added.push(source_json(&s));
+                st.sources.lock().unwrap().insert(s.id.clone(), s);
+            }
+            Err(e) => errors.push(e.to_string()),
+        }
+    }
+    Ok(json!({"added": added, "errors": errors}))
+}
+
+#[tauri::command]
+async fn add_source_url(st: S<'_>, url: String) -> Result<Value, String> {
+    let s = sources::from_url(&st.http, &url).await.map_err(|e| e.to_string())?;
+    let j = source_json(&s);
+    st.sources.lock().unwrap().insert(s.id.clone(), s);
+    Ok(j)
+}
+
+#[tauri::command]
+fn remove_source(st: S<'_>, id: String) {
+    st.sources.lock().unwrap().remove(&id);
+}
+
+/// Manual literature lookup from the UI (the user asked for it explicitly).
+#[tauri::command]
+async fn search_literature(st: S<'_>, query: String) -> Result<Value, String> {
+    let key = st.store.setting("openalex_key");
+    let papers = scholar::search(&st.http, &query, key.as_deref()).await.map_err(|e| e.to_string())?;
+    Ok(json!(papers))
 }
 
 fn main() {
@@ -116,6 +184,7 @@ fn main() {
                 app: app.handle().clone(),
                 pending: Mutex::new(HashMap::new()),
                 halts: Mutex::new(HashMap::new()),
+                sources: Mutex::new(HashMap::new()),
             });
             app.manage(state.clone());
             if let Ok(out) = std::env::var("ELENCHIA_SELFTEST") {
@@ -125,7 +194,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             detect, default_lab, list_labs, save_lab, delete_lab, start_run, resolve_gate, halt_run,
-            list_runs, run_events, verify_audit, get_settings, set_settings
+            list_runs, run_events, verify_audit, get_settings, set_settings,
+            pick_sources, add_source_url, remove_source, search_literature
         ])
         .run(tauri::generate_context!())
         .expect("error while running Elenchia");
@@ -181,6 +251,7 @@ fn selftest(handle: tauri::AppHandle, state: Arc<AppState>, out: String) {
             max_turns: 60,
             max_minutes: 10,
             dataset: None,
+            source_ids: vec![],
         };
         match {
             let mut lab = roles::default_lab();

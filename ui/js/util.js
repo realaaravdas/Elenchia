@@ -51,8 +51,8 @@ export const STAGE_LABEL = {
   promote: 'drafting the finding',
 };
 export const ARGUE = new Set(['challenge', 'answer', 'resolve', 'finalpass']);
-export const GATE_LABEL = { framing: 'Question framing', experiment: 'Experiment approval', resource: 'Resource & data', promotion: 'Claim promotion', ethics: 'Ethics flag' };
-export const GATE_ORDER = { ethics: 0, resource: 1, experiment: 2, promotion: 3, framing: 4 };
+export const GATE_LABEL = { framing: 'Question framing', experiment: 'Experiment approval', resource: 'Resource & data', promotion: 'Claim promotion', ethics: 'Ethics flag', literature: 'Literature search' };
+export const GATE_ORDER = { ethics: 0, resource: 1, experiment: 2, promotion: 3, framing: 4, literature: 5 };
 export const GRADE_N = { strong: 4, moderate: 3, weak: 2, inconclusive: 1 };
 
 export function gradeMeter(g) {
@@ -121,6 +121,7 @@ export function icon(name) {
     notebook: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
     runs: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 114 2c-.9.6-1.6 1.1-1.6 2.3M12 17h.01"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>',
   };
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

@@ -139,24 +139,25 @@ async fn hardware() -> Value {
 
 /// Stream one chat completion. `on_delta` returns false to abort (run halted).
 /// Returns the full text.
-pub async fn chat_stream(
+async fn chat_once(
     http: &reqwest::Client,
     urls: &Urls,
     m: &ModelRef,
     msgs: &[ChatMsg],
-    mut on_delta: impl FnMut(&str) -> bool,
-) -> Result<String> {
+    max_tokens: u32,
+    on_delta: &mut impl FnMut(&str) -> bool,
+) -> Result<(String, String)> {
     let (url, body, ndjson) = match m.runtime.as_str() {
         "ollama" => (
             format!("{}/api/chat", trim(&urls.ollama)),
             json!({"model": m.model, "messages": msgs, "stream": true, "format": "json",
-                   "options": {"temperature": m.temperature, "num_predict": m.max_tokens}}),
+                   "options": {"temperature": m.temperature, "num_predict": max_tokens}}),
             true,
         ),
         "lmstudio" => (
             format!("{}/v1/chat/completions", trim(&urls.lmstudio)),
             json!({"model": m.model, "messages": msgs, "stream": true,
-                   "temperature": m.temperature, "max_tokens": m.max_tokens}),
+                   "temperature": m.temperature, "max_tokens": max_tokens}),
             false,
         ),
         other => return Err(anyhow!("unknown runtime '{other}'")),
@@ -199,6 +200,7 @@ pub async fn chat_stream(
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
     let mut full = String::new();
+    let mut reasoning = String::new();
     let mut pending: Vec<u8> = Vec::new();
     while let Some(chunk) = stream.next().await {
         pending.extend_from_slice(&chunk.map_err(|e| anyhow!("stream broke: {e}"))?);
@@ -231,7 +233,12 @@ pub async fn chat_stream(
                 if let Some(err) = v["error"]["message"].as_str().or_else(|| v["error"].as_str()) {
                     return Err(anyhow!("lmstudio: {err}"));
                 }
-                // `reasoning_content` (thinking models) is deliberately ignored: only the answer counts.
+                // Thinking models stream their reasoning separately. It is kept only as a
+                // last-resort source for the answer, never shown to the agents' peers.
+                let d = &v["choices"][0]["delta"];
+                if let Some(r) = d["reasoning_content"].as_str().or_else(|| d["reasoning"].as_str()) {
+                    reasoning.push_str(r);
+                }
                 v["choices"][0]["delta"]["content"].as_str().unwrap_or("").to_string()
             };
             if !delta.is_empty() {
@@ -242,8 +249,62 @@ pub async fn chat_stream(
             }
         }
     }
-    if full.trim().is_empty() {
-        return Err(anyhow!("{} returned an empty reply (is the model loaded? thinking models can spend the whole token limit reasoning)", m.runtime));
+    Ok((full, reasoning))
+}
+
+/// Reasoning models inline `<think>…</think>` in the reply. Drop it, including
+/// an unterminated block, so only the answer remains.
+pub fn strip_think(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(s) = rest.find("<think>") {
+        out.push_str(&rest[..s]);
+        match rest[s..].find("</think>") {
+            Some(e) => rest = &rest[s + e + "</think>".len()..],
+            None => return out,
+        }
     }
-    Ok(full)
+    out.push_str(rest);
+    // A lone closing tag means the opening one was consumed by the chat template.
+    match out.rfind("</think>") {
+        Some(i) => out[i + "</think>".len()..].to_string(),
+        None => out,
+    }
+}
+
+/// Stream one chat completion. `on_delta` returns false to abort (run halted).
+/// Returns the answer text.
+///
+/// Thinking models (Qwen3, DeepSeek-R1, gpt-oss…) can burn the whole token limit
+/// on reasoning and return no answer. LM Studio gets a generous floor, and an
+/// empty answer is retried once with a much larger budget before giving up.
+pub async fn chat_stream(
+    http: &reqwest::Client,
+    urls: &Urls,
+    m: &ModelRef,
+    msgs: &[ChatMsg],
+    mut on_delta: impl FnMut(&str) -> bool,
+) -> Result<String> {
+    let base = if m.runtime == "lmstudio" { m.max_tokens.max(4096) } else { m.max_tokens };
+    let (full, reasoning) = chat_once(http, urls, m, msgs, base, &mut on_delta).await?;
+    if !strip_think(&full).trim().is_empty() {
+        return Ok(full);
+    }
+    let mut reasoning = reasoning;
+    if m.runtime == "lmstudio" || m.runtime == "ollama" {
+        let big = (base * 4).clamp(8192, 16000);
+        let (full2, r2) = chat_once(http, urls, m, msgs, big, &mut on_delta).await?;
+        if !strip_think(&full2).trim().is_empty() {
+            return Ok(full2);
+        }
+        reasoning = if r2.is_empty() { reasoning } else { r2 };
+    }
+    // Some servers put the whole answer in the reasoning channel.
+    if reasoning.contains('{') && reasoning.contains('}') {
+        return Ok(reasoning);
+    }
+    Err(anyhow!(
+        "{} returned no answer for '{}'. If it is a thinking model it spent its whole budget reasoning: turn thinking off for it in LM Studio (model settings → Thinking / reasoning), raise this agent's max tokens, or pick a non-thinking instruct model. Otherwise check that the model is loaded.",
+        m.runtime, m.model
+    ))
 }

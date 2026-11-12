@@ -79,3 +79,15 @@ The orchestrator emits events over Tauri's event bus; the UI derives everything 
 - **Custom roles** are stored and drawn but only the six built-in roles are scheduled. The librarian, per-gate replay of alternative branches, mixed-model disagreement metrics and reproducibility reruns are v0.2/v0.3 per the concept.
 - **Refusal rules are narrow.** A short built-in list halts clearly harmful framings before any model is called; everything subtler relies on agent flags and your ethics gate.
 - Tested against the scripted lab end to end, and against a mock Ollama server for streaming, schema validation, retry and error handling. Not yet tested against a real LM Studio or Ollama server (the LM Studio paths follow its documented API), and not against Python (none was installed on the dev machine; the sandbox code path for Python is untested).
+
+## v1.2 (experimental): research assistance features
+
+These are on the `v1.2-experimental` branch and are being finalised for v2. Behaviour may change.
+
+- **Reference material.** In *New run*, attach PDFs, text, Markdown, CSV, LaTeX or HTML files with the native file picker, or paste a link to a paper or page. Text is extracted locally; the lab reads the passages most relevant to your question (small local models cannot take whole papers) and cites them as `[S1]`, `[S2]`. A link is fetched only because you added it. Scanned PDFs need OCR, which is not supported yet.
+- **Online literature search** (off by default; enable under *Runtimes & hardware*). Uses OpenAlex, with Semantic Scholar as fallback, because Google Scholar has no API and blocks automated access. After you confirm the question, a gate shows the exact query text, which you can edit, and sends nothing until you approve. Results appear in the notebook's *Sources* section and agents may cite them as `[n]`. This is the only code that touches the internet.
+- **Real debate.** The generator and critic now go back and forth: while the critic is unsatisfied it explains what is missing and the generator must respond, for up to three exchanges, depending on the budget left.
+- **Time awareness.** Every agent turn is told the wall-clock time and turns remaining and is asked to be briefer as they run out. The debate depth shrinks automatically so the experiment still gets its time.
+- **Thinking-model fix.** Empty replies from reasoning models in LM Studio are retried with a larger token budget, and the error now says how to fix it (turn thinking off or raise max tokens).
+
+Untested against live services: the literature APIs, PDF extraction and the file dialog were compiled but not exercised end to end.

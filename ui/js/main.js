@@ -4,6 +4,8 @@
 import { h, $, clear, pill, toast, icon } from './util.js';
 import { call, onEvent, isDesktop } from './api.js';
 import { S, A, recompute, isLive, running, modelsAvailable } from './state.js';
+import { windowControls, installDrag } from './winctl.js';
+import { startTour, tourSeen } from './tour.js';
 import { createFloor } from './floor.js';
 import { createDesigner } from './designer.js';
 import { createBoard, createInbox, createNotebook } from './board.js';
@@ -31,6 +33,7 @@ function renderRail() {
   r.append(h('div', { class: 'spacer' }),
     h('button', { class: 'rail-btn', title: 'Runs', 'aria-label': 'Runs', onclick: runsDialog }, icon('runs')),
     h('button', { class: 'rail-btn', title: 'Runtimes & hardware', 'aria-label': 'Runtimes', onclick: settingsDialog }, icon('settings')),
+    h('button', { class: 'rail-btn', title: 'Quick-start tour', 'aria-label': 'Quick-start tour', onclick: () => startTour(newRunDialog) }, icon('help')),
     h('button', { class: 'rail-btn', title: 'Toggle light / dark', 'aria-label': 'Toggle theme', onclick: () => A.toggleTheme() }, icon('sun')));
 }
 
@@ -50,7 +53,8 @@ function renderTop() {
     S.preview ? pill('browser preview', 'dashed') : null,
     h('button', { class: 'pill', style: { cursor: 'pointer', background: 'none' }, title: 'Runtimes & hardware', onclick: settingsDialog }, n ? `${n} local model${n > 1 ? 's' : ''}` : 'no local models · demo lab'),
     running() ? h('button', { class: 'btn sm', onclick: () => A.halt() }, 'Halt run') : null,
-    h('button', { class: 'btn primary sm', onclick: newRunDialog }, 'New run ', h("kbd", {}, "N"))].filter(Boolean));
+    h('button', { class: 'btn primary sm', onclick: newRunDialog }, 'New run ', h("kbd", {}, "N")),
+    windowControls()].filter(Boolean));
   void d;
 }
 
@@ -167,7 +171,7 @@ Object.assign(A, {
     A.touchLab(); designerRefresh(); toast('Assigned local models. Critic runs on a different family where available.');
   },
   async rescan() { S.detection = await call('detect'); refresh(null); designerRefresh(); },
-  async saveSettings(o, l) { await call('set_settings', { ollamaUrl: o, lmstudioUrl: l }); S.settings = await call('get_settings'); await A.rescan(); },
+  async saveSettings(o, l, extra = {}) { await call('set_settings', { ollamaUrl: o, lmstudioUrl: l, ...extra }); S.settings = await call('get_settings'); await A.rescan(); },
 });
 
 function designerRefresh(select) {
@@ -183,6 +187,7 @@ function setTheme(t) {
 
 // ---------- boot ----------
 async function boot() {
+  installDrag();
   const saved = ls.get('elenchia.theme');
   setTheme(saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
   S.calm = ls.get('elenchia.calm') === '1' || matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -198,11 +203,13 @@ async function boot() {
   S.lab = lab && lab.agents ? lab : await call('default_lab');
   recompute(); renderRail(); renderTop(); mountView();
   onEvent(handleEvent);
+  if (!tourSeen()) setTimeout(() => startTour(newRunDialog), 600);
   // Re-detect runtimes now and then so starting Ollama later is noticed.
   setInterval(async () => { if (!running()) { try { S.detection = await call('detect'); renderTop(); } catch { /* offline */ } } }, 20000);
 }
 
 document.addEventListener('keydown', (e) => {
+  if (document.getElementById('tour')) return;
   if (e.key === 'Escape') { closeModal(); closeDrawer(); return; }
   if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
   const map = { 1: 'floor', 2: 'designer', 3: 'experiments', 4: 'inbox', 5: 'notebook' };

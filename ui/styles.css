@@ -60,6 +60,16 @@ h1 { font-size: 20px; } h2 { font-size: 15px; } h3 { font-size: 13px; }
 #topbar { grid-area: top; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 14px; padding: 0 18px; min-width: 0; }
 #topbar .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; max-width: 46%; }
 #topbar .grow { flex: 1; }
+:root.frameless #topbar { padding-right: 0; user-select: none; }
+:root.frameless #topbar .title, :root.frameless #rail { user-select: none; }
+.wctl { display: flex; align-self: stretch; margin-left: 6px; }
+.wc {
+  width: 46px; border: 0; background: none; color: var(--fg-dim); cursor: default;
+  display: grid; place-items: center; padding: 0;
+}
+.wc svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linecap: square; stroke-linejoin: miter; }
+.wc:hover { background: var(--bg-hover); color: var(--fg); }
+.wc-close:hover { background: var(--inv-bg); color: var(--inv-fg); }
 .pill {
   display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--line-strong);
   font: 600 10.5px/18px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--fg-dim); white-space: nowrap;
@@ -241,3 +251,20 @@ table.tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-
 
 @media (max-width: 1280px) { .floor { grid-template-columns: 210px minmax(0,1fr) 340px; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+
+/* ---- guided tour ---- */
+#tour { position: fixed; inset: 0; z-index: 1000; }
+.tour-spot {
+  position: fixed; border-radius: 10px; border: 1px solid var(--fg); pointer-events: none;
+  box-shadow: 0 0 0 100vmax rgba(0,0,0,.72); transition: all .28s ease;
+}
+:root[data-theme="light"] .tour-spot { box-shadow: 0 0 0 100vmax rgba(0,0,0,.5); }
+.tour-card {
+  position: fixed; background: var(--bg); color: var(--fg); border: 1px solid var(--line-strong); border-radius: 12px;
+  padding: 16px 18px; display: grid; gap: 8px; box-shadow: 0 18px 48px rgba(0,0,0,.5); transition: left .28s ease, top .28s ease;
+}
+.tour-card p { margin: 0; color: var(--fg-dim); white-space: pre-line; }
+.tour-dots { display: flex; gap: 5px; margin: 4px 0; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--fg-mute); }
+.tour-dots i.on { background: var(--fg); border-color: var(--fg); }
+.tour-card .btn-row { display: flex; gap: 8px; align-items: center; }

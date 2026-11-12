@@ -1,8 +1,9 @@
 // Drawers and dialogs: agent / hypothesis / experiment details, message and
 // exchange viewers, new run, run history, runtimes & settings.
 
-import { h, $, clear, pill, statusPill, gradeMeter, diffView, ago, clock, toast, trunc, STAGE_LABEL, GATE_LABEL } from './util.js';
+import { h, put, $, clear, pill, statusPill, gradeMeter, diffView, ago, clock, toast, trunc, STAGE_LABEL, GATE_LABEL } from './util.js';
 import { A, S, modelsAvailable } from './state.js';
+import { call } from './api.js';
 import { agentName } from './model.js';
 import { gateControls } from './gates.js';
 
@@ -114,6 +115,28 @@ export function newRunDialog() {
   const mins = h('input', { type: 'number', value: 45, min: 1, max: 720 });
   const off = h('input', { type: 'text', placeholder: 'Comma-separated topics the lab must not touch' });
   const ds = h('input', { type: 'text', placeholder: 'Optional path to a dataset (granted read-only, only if an experiment asks and you approve)' });
+  // Attached reference material (experimental): PDFs/text from disk, or a link.
+  const attached = [];
+  const list = h('div', { class: 'stack' });
+  const url = h('input', { type: 'text', placeholder: 'Paste a link to a paper, PDF or web page…' });
+  const msg = h('div', { class: 'mute' });
+  const drawList = () => put(clear(list), attached.map((s) => h('div', { class: 'card pad row', title: s.preview },
+    pill(s.kind), h('span', { style: { flex: 1, minWidth: 0 } }, trunc(s.name, 60), h('span', { class: 'mute' }, ` · ${Math.round(s.chars / 1000)}k chars`)),
+    h('button', { class: 'btn sm ghost', onclick: async () => { attached.splice(attached.indexOf(s), 1); try { await call('remove_source', { id: s.id }); } catch { /* ignore */ } drawList(); } }, 'Remove'))));
+  const browse = async () => {
+    msg.textContent = 'Reading…';
+    try {
+      const r = await call('pick_sources');
+      attached.push(...r.added); drawList();
+      msg.textContent = r.errors.length ? r.errors.join(' · ') : '';
+    } catch (e) { msg.textContent = String(e); }
+  };
+  const addUrl = async () => {
+    if (!url.value.trim()) return;
+    msg.textContent = 'Fetching…';
+    try { attached.push(await call('add_source_url', { url: url.value.trim() })); url.value = ''; msg.textContent = ''; drawList(); }
+    catch (e) { msg.textContent = String(e); }
+  };
   const demo = S.lab.agents.every((a) => !a.enabled || a.model.runtime === 'demo');
   const haveModels = modelsAvailable().length > 0;
   const examples = ['Does this regularizer actually help, or is it tuning noise?', 'Which of these three mechanisms best explains the pattern in my dataset?', 'Is this pricing experiment powered well enough to run?'];
@@ -125,11 +148,14 @@ export function newRunDialog() {
     h('div', { class: 'field' }, h('label', {}, 'Off-limits topics'), off),
     h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'Turn budget'), turns), h('div', { class: 'field' }, h('label', {}, 'Time budget (minutes)'), mins)),
     h('div', { class: 'field' }, h('label', {}, 'Dataset (optional)'), ds),
+    h('div', { class: 'field' }, h('label', {}, 'Reference material ', pill('experimental', 'dashed')),
+      h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: browse }, 'Choose files…'), url, h('button', { class: 'btn sm', onclick: addUrl }, 'Add link')),
+      h('div', { class: 'hint' }, 'PDF, text, Markdown, CSV, LaTeX or HTML. The lab reads the passages most relevant to your question. Links are fetched only because you add them.'), msg, list),
     h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Cancel'),
       h('button', { class: 'btn primary', onclick: async () => {
         if (!q.value.trim()) { q.focus(); return; }
         closeModal();
-        await A.startRun({ question: q.value.trim(), constraints: cons.value.split('\n').map((s) => s.trim()).filter(Boolean), offlimits: off.value.split(',').map((s) => s.trim()).filter(Boolean), max_turns: +turns.value, max_minutes: +mins.value, dataset: ds.value.trim() || null });
+        await A.startRun({ question: q.value.trim(), constraints: cons.value.split('\n').map((s) => s.trim()).filter(Boolean), offlimits: off.value.split(',').map((s) => s.trim()).filter(Boolean), max_turns: +turns.value, max_minutes: +mins.value, dataset: ds.value.trim() || null, source_ids: attached.map((s) => s.id) });
       } }, 'Start run'))));
   setTimeout(() => q.focus(), 30);
 }
@@ -147,6 +173,8 @@ export function runsDialog() {
 export function settingsDialog() {
   const d = S.detection, st = S.settings;
   const ou = h('input', { type: 'text', value: st.ollama_url }), lu = h('input', { type: 'text', value: st.lmstudio_url });
+  const lit = h('input', { type: 'checkbox', checked: !!st.literature_enabled });
+  const key = h('input', { type: 'password', placeholder: st.openalex_key_set ? 'A key is saved. Type to replace.' : 'Leave empty to use the shared limit' });
   const rt = (name, key) => {
     const x = d?.[key];
     return h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, name), pill(x?.up ? 'running' : 'not detected', x?.up ? 'solid' : 'dashed')),
@@ -154,13 +182,16 @@ export function settingsDialog() {
   };
   const hw = d?.hardware;
   openModal(h('div', {},
-    h('h2', {}, 'Runtimes & hardware'), h('div', { class: 'sub' }, 'Every agent runs on a local model. Nothing leaves this machine.'),
+    h('h2', {}, 'Runtimes & hardware'), h('div', { class: 'sub' }, 'Every agent runs on a local model. Nothing leaves this machine unless you enable online search below.'),
     h('div', { class: 'stack' }, rt('Ollama', 'ollama'), rt('LM Studio', 'lmstudio'),
       h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Python (experiment sandbox)'), pill(d?.python?.found ? d.python.version : 'not found', d?.python?.found ? 'solid' : 'dashed')), d?.python?.found ? null : h('div', { class: 'mute', style: { marginTop: '6px' } }, 'Install Python 3.9+ to run experiments. The scripted demo falls back to a built-in kernel, clearly labelled.')),
       h('div', { class: 'card pad' }, h('h3', {}, 'Hardware'), kvs([['RAM', hw ? `${hw.ram_free_gb} GB free of ${hw.ram_total_gb} GB` : '—'], ['GPU', hw?.vram ? `${hw.vram.gpu} · ${hw.vram.free_gb.toFixed(1)} GB free of ${hw.vram.total_gb.toFixed(1)} GB` : 'no NVIDIA GPU reported'], ['Scheduling', 'One large model loaded at a time by default']]))),
     h('hr', { class: 'hr' }),
     h('div', { class: 'cols2' }, h('div', { class: 'field' }, h('label', {}, 'Ollama URL'), ou), h('div', { class: 'field' }, h('label', {}, 'LM Studio URL'), lu)),
+    h('div', { class: 'card pad' }, h('div', { class: 'row' }, h('h3', { style: { flex: 1 } }, 'Online literature search'), pill('experimental', 'dashed')),
+      h('label', { class: 'row', style: { gap: '8px', marginTop: '8px' } }, lit, h('span', {}, 'Let the lab search OpenAlex / Semantic Scholar (asks you each time; sends only the query text)')),
+      h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'OpenAlex API key (optional, free; raises the daily limit)'), key)),
     h('div', { class: 'mute' }, `Data folder: ${st.data_dir}`),
     S.preview ? h('div', { class: 'card pad', style: { marginTop: '12px' } }, 'Browser preview: replaying a run recorded from the desktop backend. Install the desktop app for local models, the real sandbox and persistent storage.') : null,
-    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'), h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(ou.value, lu.value); closeModal(); toast('Rescanned runtimes.'); } }, 'Save & rescan'))));
+    h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Close'), h('button', { class: 'btn primary', onclick: async () => { await A.saveSettings(ou.value, lu.value, { literatureEnabled: lit.checked, openalexKey: key.value }); closeModal(); toast('Rescanned runtimes.'); } }, 'Save & rescan'))));
 }

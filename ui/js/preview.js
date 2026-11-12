@@ -101,6 +101,10 @@ export async function createPreview(fire) {
     verify_audit: ({ runId }) => ({ events: runs.get(runId)?.events.length ?? 0, broken_at: null }),
     get_settings: () => ({ ollama_url: 'http://127.0.0.1:11434', lmstudio_url: 'http://127.0.0.1:1234', data_dir: '(browser preview)' }),
     set_settings: () => {},
+    pick_sources: () => ({ added: [], errors: ['File picking needs the desktop app.'] }),
+    add_source_url: () => { throw new Error('Attaching links needs the desktop app.'); },
+    remove_source: () => {},
+    search_literature: () => { throw new Error('Literature search needs the desktop app.'); },
   };
   return {
     async call(cmd, args) {
