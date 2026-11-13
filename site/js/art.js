@@ -7,6 +7,10 @@ const cv = document.getElementById('art-canvas');
 if (box && cv) start();
 
 function start() {
+  // Layout must not depend on the stylesheet having loaded: if the canvas took part in sizing its own
+  // container, resizing it would grow the container, and so on without end. Keep it out of flow.
+  box.style.position = 'relative'; box.style.overflow = 'hidden';
+  cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block';
   const ctx = cv.getContext('2d');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let W = 0, H = 0, dpr = 1, c = {}, running = true, visible = true, last = 0, spawnAt = 0, hid = 0, oid = 0;
@@ -38,7 +42,7 @@ function start() {
   function resize() {
     const r = box.getBoundingClientRect();
     dpr = Math.min(2, devicePixelRatio || 1);
-    W = Math.max(10, r.width); H = Math.max(10, r.height);
+    W = Math.min(1200, Math.max(10, r.width)); H = Math.min(1200, Math.max(10, r.height));
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }

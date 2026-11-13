@@ -32,6 +32,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Assemble the site
         run: bash site/build.sh
+      - name: Cache-bust the page's own assets
+        run: |
+          v=${GITHUB_SHA::7}
+          sed -i "s|css/site.css\"|css/site.css?v=$v\"|; s|js/site.js\"|js/site.js?v=$v\"|; s|js/demo.js\"|js/demo.js?v=$v\"|; s|js/art.js\"|js/art.js?v=$v\"|" site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

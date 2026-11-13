@@ -35,6 +35,8 @@ try { E = await (await fetch('data/sample-run.json')).json(); } catch { E = null
 if (!E || !E.length) { demo.hidden = true; throw new Error('no recording'); }
 
 const canvas = $('#d-canvas');
+canvas.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block'; // never let the canvas size its own container
+canvas.parentElement.style.position = 'relative';
 const floor = new Floor(canvas, {});
 addEventListener('themechange', () => { floor.colors(); floor.dirty = true; });
 
