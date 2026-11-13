@@ -2,7 +2,7 @@
 // embedded app, and copy buttons. No dependencies.
 
 const root = document.documentElement;
-const REPO = 'realaaravdas/Elenchia';
+const REPO = 'realaaravdas/elenchia';
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
 
 // The embedded app shares this origin's storage: skip its first-run tour in the frame.

@@ -12,7 +12,7 @@ This is **version 1.4**: four core agents with editable briefs, statistical and 
 
 ## Download
 
-Installers for Windows, macOS (Apple Silicon and Intel) and Linux are attached to each [release](https://github.com/realaaravdas/Elenchia/releases). They are built by GitHub Actions when a `v*` tag is pushed, and are **unsigned**, so the OS warns on first launch:
+Installers for Windows, macOS (Apple Silicon and Intel) and Linux are attached to each [release](https://github.com/realaaravdas/elenchia/releases). They are built by GitHub Actions when a `v*` tag is pushed, and are **unsigned**, so the OS warns on first launch:
 
 | Platform | File | First launch |
 |---|---|---|
