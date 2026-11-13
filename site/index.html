@@ -30,6 +30,8 @@
 <main id="top">
 <section class="hero">
   <div class="wrap">
+    <div class="hero-grid">
+    <div class="hero-copy">
     <div class="cap"><span class="mono" id="ver">v1.4.0</span><span>Local-first desktop app</span></div>
     <h1>Direct an AI lab, don’t chat with an assistant.</h1>
     <p class="lede">Elenchia is a desktop app where you staff a lab of AI agents, point them at a research question, and approve what they do. They argue, design experiments, run them and grade the evidence. <b>You are the ethics and approval layer.</b></p>
@@ -38,6 +40,12 @@
       <a class="btn primary" id="cta-dl" href="https://github.com/realaaravdas/elenchia/releases">Download</a>
       <a class="btn" href="#how">See how a run works</a>
       <span class="note" id="cta-note">Windows, macOS and Linux</span>
+    </div>
+    </div>
+    <figure class="art" id="art" aria-label="Generated illustration of a hypothesis under objection">
+      <canvas id="art-canvas" aria-hidden="true"></canvas>
+      <figcaption>Generated live. A hypothesis under objection.</figcaption>
+    </figure>
     </div>
 
     <div class="demo" id="demo" aria-label="Animation of a recorded Elenchia run">
@@ -246,5 +254,6 @@
 
 <script type="module" src="js/site.js"></script>
 <script type="module" src="js/demo.js"></script>
+<script type="module" src="js/art.js"></script>
 </body>
 </html>

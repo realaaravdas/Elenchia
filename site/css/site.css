@@ -219,3 +219,12 @@ footer .grow { flex: 1; }
   .hero { padding-top: 44px; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .new, .status .dot, .tabs2 .ind { animation: none; transition: none; } }
+
+/* ---------- hero illustration ---------- */
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 460px); gap: 56px; align-items: stretch; }
+.hero-copy { min-width: 0; }
+.art { position: relative; margin: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); min-height: 440px; }
+.art canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.art figcaption { position: absolute; left: 14px; bottom: 11px; font: 600 9.5px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--fg-mute); pointer-events: none; }
+@media (max-width: 980px) { .hero-grid { grid-template-columns: 1fr; gap: 36px; } .art { min-height: 340px; } }
+@media (max-width: 640px) { .art { min-height: 280px; } }
